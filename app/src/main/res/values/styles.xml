@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.HoneyPhone" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#D4FF33</item>
+        <item name="android:windowBackground">#080D0B</item>
+        <item name="android:statusBarColor">#080D0B</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#080D0B</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
