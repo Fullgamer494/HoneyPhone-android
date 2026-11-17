@@ -1,0 +1,7 @@
+# Copiar a probe.properties solo al disponer de destinos controlados.
+# TXT fijo, referencia RFC8484 DoH con TLS válido y HTTPS 2xx sin redirección.
+PROBE_DNS_NAME=
+PROBE_EXPECTED_TXT=
+PROBE_DOH_URL=
+PROBE_HTTPS_URL=
+PROBE_CONFIG_VERSION=
