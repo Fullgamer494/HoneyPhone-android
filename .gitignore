@@ -1,0 +1,10 @@
+# Gradle y compilaciones locales
+.gradle/
+.kotlin/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+probe.properties
