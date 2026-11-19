@@ -31,7 +31,18 @@ class RoomReviewRepository(private val context: Context) {
         return prefs.getString("installation_id", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("installation_id", it).apply() }
     }
     suspend fun registerDevice(): org.json.JSONObject = withContext(Dispatchers.IO) { api.registerDevice(installationId(), BuildConfig.VERSION_NAME) }
-    suspend fun listDevices(): List<DeviceInfo> = withContext(Dispatchers.IO) { api.devices().map { DeviceInfo(it.getString("installation_id"), it.optString("device_name").takeIf(String::isNotBlank), it.getString("app_version"), it.getBoolean("active"), it.getString("last_seen_at")) } }
+    suspend fun listDevices(): List<DeviceInfo> = withContext(Dispatchers.IO) {
+        api.devices().map { device ->
+            val deviceName = if (device.isNull("device_name")) null else device.optString("device_name").takeIf(String::isNotBlank)
+            DeviceInfo(
+                device.getString("installation_id"),
+                deviceName,
+                device.getString("app_version"),
+                device.getBoolean("active"),
+                device.getString("last_seen_at"),
+            )
+        }
+    }
     suspend fun deviceIsActive(): Boolean = withContext(Dispatchers.IO) { api.device(installationId()).optBoolean("active", false) }
     suspend fun renameDevice(name: String): org.json.JSONObject = withContext(Dispatchers.IO) { api.updateDevice(installationId(), name) }
     suspend fun revokeDevice(): org.json.JSONObject = withContext(Dispatchers.IO) { api.revokeDevice(installationId()) }
