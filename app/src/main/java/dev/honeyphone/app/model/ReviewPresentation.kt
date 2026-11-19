@@ -12,6 +12,8 @@ data class HoneypotStatus(
     val phase: HoneypotPhase = HoneypotPhase.STOPPED,
     val address: String? = null,
     val message: String? = null,
+    val serviceName: String? = null,
+    val serviceDiscoveryReady: Boolean? = null,
 )
 
 data class HoneypotEvent(

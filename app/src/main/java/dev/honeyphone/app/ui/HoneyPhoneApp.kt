@@ -1,6 +1,10 @@
 package dev.honeyphone.app.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -476,6 +480,7 @@ private fun HoneypotScreen(
     onRefreshRemote:(String?)->Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     if (confirmClear) AlertDialog(
         onDismissRequest={confirmClear=false},
         title={Text("¿Borrar eventos del señuelo?")},
@@ -498,16 +503,33 @@ private fun HoneypotScreen(
                 },if(status.phase==HoneypotPhase.LISTENING) HoneyStyle.Lime else if(status.phase==HoneypotPhase.ERROR) HoneyStyle.Amber else HoneyStyle.Muted)
             }
             if(status.phase==HoneypotPhase.LISTENING && status.address!=null) {
-                Text(status.address,style=MaterialTheme.typography.titleLarge,fontFamily=HoneyStyle.Mono,color=HoneyStyle.Lime)
                 val isEmulatorAddress = status.address.startsWith("http://10.0.2.")
+                when (status.serviceDiscoveryReady) {
+                    true -> Text(
+                        "Nombre en la red: ${status.serviceName ?: "HoneyPhone"}",
+                        style=MaterialTheme.typography.titleLarge,
+                        color=HoneyStyle.Lime,
+                    )
+                    false -> Text("Nombre local no disponible",style=MaterialTheme.typography.titleMedium,color=HoneyStyle.Amber)
+                    null -> Text("Anunciando HoneyPhone en la red…",style=MaterialTheme.typography.titleMedium,color=HoneyStyle.Muted)
+                }
                 Text(
                     if (isEmulatorAddress) {
-                        "Esta IP es virtual. En el computador usa adb forward tcp:8080 tcp:8080 y abre http://127.0.0.1:8080/admin. Para probar desde tu teléfono físico, ejecuta HoneyPhone en ese teléfono."
+                        "El emulador usa una IP virtual; prueba el listener desde el computador con ADB. Para recibir conexiones de la red, inicia HoneyPhone en un teléfono físico."
                     } else {
-                        "En otro equipo de esta Wi-Fi, abre ${status.address}/admin o ${status.address}/login."
+                        "Otros dispositivos compatibles pueden descubrir HoneyPhone por su nombre. Los navegadores pueden usar este enlace IP de respaldo: ${status.address}/admin."
                     },
                     style=MaterialTheme.typography.bodySmall,
                     color=HoneyStyle.Muted,
+                )
+                if (!isEmulatorAddress) SecondaryAction(
+                    "Copiar enlace IP de respaldo",
+                    icon=Icons.Default.ContentCopy,
+                    onClick={
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Enlace HoneyPhone", "${status.address}/admin"))
+                        Toast.makeText(context, "Enlace copiado", Toast.LENGTH_SHORT).show()
+                    },
                 )
             }
             if(status.message!=null) Text(status.message,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Amber)
@@ -516,6 +538,7 @@ private fun HoneypotScreen(
             else PrimaryAction("Iniciar listener en esta Wi-Fi",enabled=status.phase!=HoneypotPhase.STARTING,onClick=onStart)
         }
         InfoStrip("Qué registra","Hora, IP de origen, método HTTP, ruta y User-Agent. No lee ni almacena cuerpos de petición, contraseñas, SSID ni BSSID.")
+        InfoStrip("Nombre local","HoneyPhone anuncia su servicio HTTP por descubrimiento de red (NSD/mDNS). El acceso por nombre depende de que la Wi-Fi permita descubrimiento entre dispositivos; la IP copiada sirve como respaldo para el navegador.",HoneyStyle.Muted)
         InfoStrip("Almacenamiento","Los últimos 100 eventos quedan en el teléfono y se envían enmascarados a la API cuando hay conexión. Puedes borrar la copia local desde aquí.",HoneyStyle.Muted)
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Heading("Actividad",if(events.isEmpty()) "Sin peticiones" else "${events.size} eventos recientes")

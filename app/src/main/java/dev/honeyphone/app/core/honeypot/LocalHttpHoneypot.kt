@@ -3,7 +3,11 @@ package dev.honeyphone.app.core.honeypot
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import dev.honeyphone.app.BuildConfig
 import dev.honeyphone.app.model.HoneypotEvent
 import dev.honeyphone.app.model.HoneypotPhase
@@ -34,9 +38,12 @@ class LocalHttpHoneypot(
 ) {
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
+    private val nsdManager = appContext.getSystemService(Context.NSD_SERVICE) as NsdManager
+    private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var active = false
     @Volatile private var listener: ServerSocket? = null
     @Volatile private var activeClient: Socket? = null
+    @Volatile private var registrationListener: NsdManager.RegistrationListener? = null
 
     fun start() {
         if (active) return
@@ -63,7 +70,9 @@ class LocalHttpHoneypot(
                     server.close()
                     return@execute
                 }
-                onStatus(HoneypotStatus(HoneypotPhase.LISTENING, "http://${wifiAddress.hostAddress}:$PORT"))
+                val address = "http://${wifiAddress.hostAddress}:$PORT"
+                onStatus(HoneypotStatus(phase = HoneypotPhase.LISTENING, address = address))
+                advertiseService(address)
 
                 while (active) {
                     val client = server.accept()
@@ -91,6 +100,7 @@ class LocalHttpHoneypot(
                 }
             } finally {
                 active = false
+                unregisterService()
                 listener?.runCatching { close() }
                 listener = null
                 activeClient?.runCatching { close() }
@@ -103,6 +113,7 @@ class LocalHttpHoneypot(
 
     fun stop() {
         active = false
+        unregisterService()
         listener?.runCatching { close() }
         activeClient?.runCatching { close() }
         executor.shutdownNow()
@@ -126,6 +137,71 @@ class LocalHttpHoneypot(
     private fun isEmulator(): Boolean =
         Build.HARDWARE.contains("ranchu", ignoreCase = true) ||
             Build.MODEL.contains("sdk_gphone", ignoreCase = true)
+
+    private fun advertiseService(address: String) {
+        val service = NsdServiceInfo().apply {
+            serviceName = SERVICE_NAME
+            serviceType = SERVICE_TYPE
+            port = PORT
+        }
+        val registration = object : NsdManager.RegistrationListener {
+            override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
+                if (!active) return
+                onStatus(
+                    HoneypotStatus(
+                        phase = HoneypotPhase.LISTENING,
+                        address = address,
+                        serviceName = serviceInfo.serviceName,
+                        serviceDiscoveryReady = true,
+                    ),
+                )
+            }
+
+            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                registrationListener = null
+                if (active) {
+                    onStatus(
+                        HoneypotStatus(
+                            phase = HoneypotPhase.LISTENING,
+                            address = address,
+                            message = "No se pudo anunciar HoneyPhone en la red (código $errorCode). Usa el enlace IP.",
+                            serviceDiscoveryReady = false,
+                        ),
+                    )
+                }
+            }
+
+            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
+
+            override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+        }
+        registrationListener = registration
+        mainHandler.post {
+            if (!active) return@post
+            runCatching { nsdManager.registerService(service, NsdManager.PROTOCOL_DNS_SD, registration) }
+                .onFailure {
+                    registrationListener = null
+                    if (active) {
+                        onStatus(
+                            HoneypotStatus(
+                                phase = HoneypotPhase.LISTENING,
+                                address = address,
+                                message = "No se pudo anunciar HoneyPhone en la red. Usa el enlace IP.",
+                                serviceDiscoveryReady = false,
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun unregisterService() {
+        val registration = registrationListener ?: return
+        registrationListener = null
+        mainHandler.post {
+            runCatching { nsdManager.unregisterService(registration) }
+        }
+    }
 
     private fun handleRequest(socket: Socket) {
         socket.soTimeout = READ_TIMEOUT_MS
@@ -216,6 +292,8 @@ class LocalHttpHoneypot(
         const val MAX_ADDRESS_LENGTH = 64
         const val MAX_PATH_LENGTH = 120
         const val MAX_USER_AGENT_LENGTH = 120
+        const val SERVICE_NAME = "HoneyPhone"
+        const val SERVICE_TYPE = "_http._tcp."
         val WHITESPACE = Regex("\\s+")
         val METHOD = Regex("[A-Za-z]{1,12}")
         val DECOY_PATHS = setOf("/", "/admin", "/login", "/robots.txt", "/.env", "/.git/config", "/api/status")
