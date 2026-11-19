@@ -121,6 +121,11 @@ class LocalHttpHoneypot(
             return
         }
         val peer = socket.inetAddress.hostAddress.orEmpty().take(MAX_ADDRESS_LENGTH)
+        val status = if (
+            request.path in DECOY_PATHS ||
+            request.path.startsWith("/admin/") ||
+            request.path.startsWith("/api/")
+        ) 200 else 404
         onEvent(
             HoneypotEvent(
                 id = UUID.randomUUID().toString(),
@@ -132,7 +137,6 @@ class LocalHttpHoneypot(
                 responseCode = status,
             ),
         )
-        val status = if (request.path in DECOY_PATHS || request.path.startsWith("/admin/") || request.path.startsWith("/api/")) 200 else 404
         writeResponse(socket, status, "No encontrado")
     }
 
