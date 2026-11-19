@@ -1,6 +1,6 @@
 # HoneyPhone Android
 
-App nativa Compose Material 3, applicationId dev.honeyphone.app, código 0.3.0. Requiere minSdk 29, compileSdk 37, targetSdk 36, JDK 21 y SDK Android API 37.
+App nativa Compose Material 3, applicationId dev.honeyphone.app, versión 0.4.0. Requiere minSdk 29, compileSdk 37, targetSdk 36, JDK 21 y SDK Android API 37.
 
 ## Compilar
 
@@ -30,3 +30,5 @@ También puedes usar adb reverse tcp:8081 tcp:8000. La app debug usa http://127.
 HTTP cleartext está limitado a loopback en debug. Release mantiene cleartext bloqueado.
 
 La guía visual está en docs/UX_INTERFAZ.md. Las fuentes empaquetadas incluyen sus licencias en font-licenses/.
+
+El señuelo HTTP real está en la pestaña **Señuelo**. Solo escucha cuando lo activas, se limita a la dirección Wi-Fi del teléfono y se detiene al salir de la app o de esa sección. Guarda localmente hasta 100 eventos con IP de origen, método, ruta y User-Agent; nunca lee ni conserva cuerpos de petición. Para probarlo, la Wi-Fi debe permitir comunicación entre clientes; desde otro dispositivo autorizado abre `http://<ip-del-teléfono>:8080/admin`.

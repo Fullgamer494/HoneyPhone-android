@@ -4,7 +4,29 @@ enum class ReviewSource { LIVE, DEMO }
 enum class SignalKind { WIFI_SECURITY, CAPTIVE_PORTAL, DNS, HTTPS }
 enum class SignalOutcome { PASS, ATTENTION, UNKNOWN, NOT_APPLICABLE }
 enum class ReviewVerdict { NO_DISCREPANCIES, ATTENTION_REQUIRED, INCOMPLETE }
-enum class AppDestination { HOME, LIVE_REVIEW, DEMO_GALLERY, RESULT, DETAIL, HISTORY, SETTINGS }
+enum class AppDestination { HOME, LIVE_REVIEW, DEMO_GALLERY, RESULT, DETAIL, HISTORY, HONEYPOT, SETTINGS }
+enum class HoneypotPhase { STOPPED, STARTING, LISTENING, ERROR }
+enum class ApiConnectionState { CHECKING, ONLINE, OFFLINE }
+
+data class HoneypotStatus(
+    val phase: HoneypotPhase = HoneypotPhase.STOPPED,
+    val address: String? = null,
+    val message: String? = null,
+)
+
+data class HoneypotEvent(
+    val id: String,
+    val occurredAt: Long,
+    val sourceAddress: String,
+    val method: String,
+    val path: String,
+    val userAgent: String,
+    val sessionId: String? = null,
+    val responseCode: Int = 404,
+)
+data class DeviceInfo(val installationId: String, val deviceName: String?, val appVersion: String, val active: Boolean, val lastSeenAt: String)
+data class HoneypotSessionInfo(val sessionId: String, val startedAt: Long, val endedAt: Long?, val state: String, val listenPort: Int)
+data class HoneypotRemoteEvent(val eventId: String, val occurredAt: Long, val sourceIpMasked: String, val method: String, val path: String, val userAgentFamily: String?, val responseCode: Int)
 
 data class SignalPresentation(
     val kind: SignalKind,
@@ -37,4 +59,15 @@ data class HoneyPhoneUiState(
     val exportJson: String? = null,
     val localSaved: Boolean = false,
     val networkLabelDraft: String = "",
+    val honeypotStatus: HoneypotStatus = HoneypotStatus(),
+    val honeypotEvents: List<HoneypotEvent> = emptyList(),
+    val devices: List<DeviceInfo> = emptyList(),
+    val deviceNameDraft: String = "",
+    val deviceMessage: String? = null,
+    val currentInstallationId: String = "",
+    val honeypotSessions: List<HoneypotSessionInfo> = emptyList(),
+    val remoteHoneypotEvents: List<HoneypotRemoteEvent> = emptyList(),
+    val selectedHoneypotSessionId: String? = null,
+    val honeypotRemoteMessage: String? = null,
+    val apiConnection: ApiConnectionState = ApiConnectionState.CHECKING,
 )

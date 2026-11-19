@@ -51,3 +51,16 @@ data class OutboxEntity(
 )
 
 data class ReviewWithSync(@androidx.room.Embedded val review: ReviewEntity, val syncStatus: String, val lastError: String?)
+
+@Entity(tableName = "honeypot_events", indices = [Index("occurredAt")])
+data class HoneypotEventEntity(
+    @PrimaryKey val id: String,
+    val occurredAt: Long,
+    val sourceAddress: String,
+    val method: String,
+    val path: String,
+    val userAgent: String,
+    val sessionId: String? = null,
+    val responseCode: Int = 404,
+    val syncStatus: String = "pending",
+)

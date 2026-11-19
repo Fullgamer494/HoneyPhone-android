@@ -9,6 +9,7 @@ import dev.honeyphone.app.core.network.CheckPayload
 import dev.honeyphone.app.core.network.NetworkApi
 import dev.honeyphone.app.core.network.SignalPayload
 import dev.honeyphone.app.model.ReviewPresentation
+import dev.honeyphone.app.model.DeviceInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -24,10 +25,19 @@ class RoomReviewRepository(private val context: Context) {
     private val syncMutex = Mutex()
     fun observeReviews() = dao.observeAll()
     suspend fun recoverInterruptedSyncs() = withContext(Dispatchers.IO) { dao.recoverInterruptedSyncs() }
-    private fun installationId(): String {
+    suspend fun checkApiHealth() = withContext(Dispatchers.IO) { api.health() }
+    fun installationId(): String {
         val prefs = context.getSharedPreferences("honeyphone_local", Context.MODE_PRIVATE)
         return prefs.getString("installation_id", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("installation_id", it).apply() }
     }
+    suspend fun registerDevice(): org.json.JSONObject = withContext(Dispatchers.IO) { api.registerDevice(installationId(), BuildConfig.VERSION_NAME) }
+    suspend fun listDevices(): List<DeviceInfo> = withContext(Dispatchers.IO) { api.devices().map { DeviceInfo(it.getString("installation_id"), it.optString("device_name").takeIf(String::isNotBlank), it.getString("app_version"), it.getBoolean("active"), it.getString("last_seen_at")) } }
+    suspend fun deviceIsActive(): Boolean = withContext(Dispatchers.IO) { api.device(installationId()).optBoolean("active", false) }
+    suspend fun renameDevice(name: String): org.json.JSONObject = withContext(Dispatchers.IO) { api.updateDevice(installationId(), name) }
+    suspend fun revokeDevice(): org.json.JSONObject = withContext(Dispatchers.IO) { api.revokeDevice(installationId()) }
+    suspend fun saveHoneypotSession(session: org.json.JSONObject): org.json.JSONObject = withContext(Dispatchers.IO) { api.upsertHoneypotSession(session) }
+    suspend fun honeypotSessions(): org.json.JSONObject = withContext(Dispatchers.IO) { api.listHoneypotSessions(installationId()) }
+    suspend fun honeypotEvents(sessionId:String): org.json.JSONObject = withContext(Dispatchers.IO) { api.listHoneypotEvents(sessionId) }
     suspend fun captureAndSave(label: String?): ReviewPresentation = withContext(Dispatchers.IO) {
         val started = Instant.now().toString()
         val reading = AndroidSignalReader(context).read()
@@ -72,6 +82,9 @@ class RoomReviewRepository(private val context: Context) {
                 "Guardada en tu teléfono. No pudimos conectar con el servidor; puedes reintentar más tarde."
             }
         }
+    }
+    suspend fun syncPendingOutbox() = withContext(Dispatchers.IO) {
+        dao.pending().forEach { item -> runCatching { sync(item.checkId) } }
     }
     suspend fun refreshRemote(): String = withContext(Dispatchers.IO) {
         val remote = api.list(installationId())
