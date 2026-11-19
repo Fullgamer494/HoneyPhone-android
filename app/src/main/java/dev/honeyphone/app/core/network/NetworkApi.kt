@@ -32,11 +32,7 @@ class NetworkApi {
     }
     fun list(installationId: String): List<JSONObject> {
         val encodedInstallationId = URLEncoder.encode(installationId, StandardCharsets.UTF_8.name())
-        val items = mutableListOf<JSONObject>()
-        val seenCursors = mutableSetOf<String>()
-        var cursor: String? = null
-
-        do {
+        return fetchAllCursorPages { cursor ->
             val cursorQuery = cursor?.let {
                 "&cursor=${URLEncoder.encode(it, StandardCharsets.UTF_8.name())}"
             }.orEmpty()
@@ -45,17 +41,10 @@ class NetworkApi {
                 "network-checks?installation_id=$encodedInstallationId&limit=50$cursorQuery",
             )
             val pageItems = page.getJSONArray("items")
-            for (index in 0 until pageItems.length()) {
-                items += pageItems.getJSONObject(index)
-            }
-
-            cursor = if (page.isNull("next_cursor")) null else page.optString("next_cursor").takeIf(String::isNotBlank)
-            if (cursor != null && !seenCursors.add(cursor)) {
-                throw IOException("La API devolvió un cursor de paginación repetido.")
-            }
-        } while (cursor != null)
-
-        return items
+            val items = (0 until pageItems.length()).map(pageItems::getJSONObject)
+            val nextCursor = if (page.isNull("next_cursor")) null else page.optString("next_cursor")
+            CursorPage(items, nextCursor)
+        }
     }
     fun get(id: String): JSONObject = request("GET", "network-checks/$id")
     fun delete(id: String) { request("DELETE", "network-checks/$id") }
