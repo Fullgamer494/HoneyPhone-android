@@ -6,6 +6,8 @@ import org.json.JSONArray
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 class ApiFailure(val status: Int, val code: String, message: String) : IOException(message)
 
@@ -29,9 +31,31 @@ class NetworkApi {
         } finally { connection.disconnect() }
     }
     fun list(installationId: String): List<JSONObject> {
-        val page = request("GET", "network-checks?installation_id=$installationId&limit=50")
-        val items = page.getJSONArray("items")
-        return (0 until items.length()).map { items.getJSONObject(it) }
+        val encodedInstallationId = URLEncoder.encode(installationId, StandardCharsets.UTF_8.name())
+        val items = mutableListOf<JSONObject>()
+        val seenCursors = mutableSetOf<String>()
+        var cursor: String? = null
+
+        do {
+            val cursorQuery = cursor?.let {
+                "&cursor=${URLEncoder.encode(it, StandardCharsets.UTF_8.name())}"
+            }.orEmpty()
+            val page = request(
+                "GET",
+                "network-checks?installation_id=$encodedInstallationId&limit=50$cursorQuery",
+            )
+            val pageItems = page.getJSONArray("items")
+            for (index in 0 until pageItems.length()) {
+                items += pageItems.getJSONObject(index)
+            }
+
+            cursor = if (page.isNull("next_cursor")) null else page.optString("next_cursor").takeIf(String::isNotBlank)
+            if (cursor != null && !seenCursors.add(cursor)) {
+                throw IOException("La API devolvió un cursor de paginación repetido.")
+            }
+        } while (cursor != null)
+
+        return items
     }
     fun get(id: String): JSONObject = request("GET", "network-checks/$id")
     fun delete(id: String) { request("DELETE", "network-checks/$id") }
