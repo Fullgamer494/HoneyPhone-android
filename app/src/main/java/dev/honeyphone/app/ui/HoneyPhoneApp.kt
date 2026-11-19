@@ -499,7 +499,16 @@ private fun HoneypotScreen(
             }
             if(status.phase==HoneypotPhase.LISTENING && status.address!=null) {
                 Text(status.address,style=MaterialTheme.typography.titleLarge,fontFamily=HoneyStyle.Mono,color=HoneyStyle.Lime)
-                Text("En otro equipo de esta Wi-Fi, abre ${status.address}/admin o ${status.address}/login.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                val isEmulatorAddress = status.address.startsWith("http://10.0.2.")
+                Text(
+                    if (isEmulatorAddress) {
+                        "Esta IP es virtual. En el computador usa adb forward tcp:8080 tcp:8080 y abre http://127.0.0.1:8080/admin. Para probar desde tu teléfono físico, ejecuta HoneyPhone en ese teléfono."
+                    } else {
+                        "En otro equipo de esta Wi-Fi, abre ${status.address}/admin o ${status.address}/login."
+                    },
+                    style=MaterialTheme.typography.bodySmall,
+                    color=HoneyStyle.Muted,
+                )
             }
             if(status.message!=null) Text(status.message,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Amber)
             Text("El listener se enlaza a la IPv4 de esta Wi-Fi y al puerto 8080. Se detiene al salir de la app o cambiar de sección.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)

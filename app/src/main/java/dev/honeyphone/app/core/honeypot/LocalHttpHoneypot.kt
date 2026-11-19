@@ -3,6 +3,8 @@ package dev.honeyphone.app.core.honeypot
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
+import dev.honeyphone.app.BuildConfig
 import dev.honeyphone.app.model.HoneypotEvent
 import dev.honeyphone.app.model.HoneypotPhase
 import dev.honeyphone.app.model.HoneypotStatus
@@ -45,9 +47,16 @@ class LocalHttpHoneypot(
             try {
                 val wifiAddress = activeWifiAddress()
                 if (!active) return@execute
+                // ADB forwards to the device loopback address. The emulator's virtual Wi-Fi
+                // address is separate, so allow all guest interfaces only in debug emulators.
+                val bindAddress = if (BuildConfig.DEBUG && isEmulator()) {
+                    InetAddress.getByName("0.0.0.0")
+                } else {
+                    wifiAddress
+                }
                 val server = ServerSocket().apply {
                     reuseAddress = true
-                    bind(InetSocketAddress(wifiAddress, PORT), BACKLOG)
+                    bind(InetSocketAddress(bindAddress, PORT), BACKLOG)
                 }
                 listener = server
                 if (!active) {
@@ -113,6 +122,10 @@ class LocalHttpHoneypot(
             ?.firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
             ?: throw IllegalStateException("Android no informó una dirección IPv4 para esta Wi-Fi.")
     }
+
+    private fun isEmulator(): Boolean =
+        Build.HARDWARE.contains("ranchu", ignoreCase = true) ||
+            Build.MODEL.contains("sdk_gphone", ignoreCase = true)
 
     private fun handleRequest(socket: Socket) {
         socket.soTimeout = READ_TIMEOUT_MS
