@@ -11,6 +11,12 @@ Desde la raíz de este repositorio:
 
 El APK se genera en app/build/outputs/apk/debug/app-debug.apk. local.properties indica la ruta del SDK en una máquina y no se debe compartir.
 
+## Release firmado
+
+El release queda unsigned si no se proporcionan credenciales de firma. Para firmarlo localmente, configura `HONEYPHONE_RELEASE_STORE_FILE`, `HONEYPHONE_RELEASE_STORE_PASSWORD`, `HONEYPHONE_RELEASE_KEY_ALIAS` y `HONEYPHONE_RELEASE_KEY_PASSWORD` en el entorno de Gradle y ejecuta `./gradlew :app:assembleRelease`. Si se proporciona solo parte de esas variables, Gradle detiene la compilación para evitar crear un artefacto con una configuración accidental.
+
+Configura también `HONEYPHONE_API_BASE_URL` con la URL base HTTPS de la API desplegada, por ejemplo `https://api.example.com/api/v1/`. La variable no tiene valor por defecto; por eso el release local sin configuración no sincroniza con una API. No guardes el keystore, contraseñas ni la URL de producción en el repositorio.
+
 ## Componentes
 
 Compose y ViewModel presentan el flujo. RoomReviewRepository guarda revisiones y outbox. AndroidSignalReader consulta Wi-Fi y APIs del sistema. NetworkApi sincroniza manualmente con FastAPI.

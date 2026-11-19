@@ -13,6 +13,19 @@ val probeProperties = Properties().apply {
 }
 fun probeLiteral(key: String): String = "\"" + probeProperties.getProperty(key, "").trim()
     .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
+fun buildConfigLiteral(value: String): String = "\"" + value.trim()
+    .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
+
+val releaseStoreFile = providers.environmentVariable("HONEYPHONE_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("HONEYPHONE_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("HONEYPHONE_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("HONEYPHONE_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningValues = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+val releaseSigningConfigured = releaseSigningValues.all { !it.isNullOrBlank() }
+require(releaseSigningValues.all { it.isNullOrBlank() } || releaseSigningConfigured) {
+    "Configure all HONEYPHONE_RELEASE_* signing variables or leave them all unset."
+}
+val releaseApiBaseUrl = providers.environmentVariable("HONEYPHONE_API_BASE_URL").orElse("").get()
 
 android {
     namespace = "dev.honeyphone.app"
@@ -33,7 +46,23 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildTypes { debug { buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8081/api/v1/\"") } }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
+    }
+    buildTypes {
+        debug { buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8081/api/v1/\"") }
+        release {
+            buildConfigField("String", "API_BASE_URL", buildConfigLiteral(releaseApiBaseUrl))
+            if (releaseSigningConfigured) signingConfig = signingConfigs.getByName("release")
+        }
+    }
     kotlin {
         compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
     }
