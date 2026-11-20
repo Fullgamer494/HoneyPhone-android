@@ -51,7 +51,8 @@ data class ReviewPresentation(
 data class DemoScenario(val checkId: String, val title: String, val description: String)
 data class ReviewHistoryItem(val checkId: String, val source: ReviewSource, val verdict: ReviewVerdict, val createdAt: Long, val syncStatus: String, val origin: String, val networkLabel: String? = null, val wifiMetrics: WifiMetrics? = null)
 data class HoneyPhoneUiState(
-    val destination: AppDestination = AppDestination.HOME,
+    val destination: AppDestination = AppDestination.HONEYPOT,
+    val activeTab: AppDestination = AppDestination.HONEYPOT,
     val scenarios: List<DemoScenario> = emptyList(),
     val review: ReviewPresentation? = null,
     val selectedSignal: SignalPresentation? = null,

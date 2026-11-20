@@ -58,6 +58,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         refreshApiStatus()
+        refreshHoneypotSessions()
         viewModelScope.launch {
             reviews.recoverInterruptedSyncs()
             reviews.observeReviews().collect { rows ->
@@ -89,9 +90,9 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
     fun setNetworkLabel(value:String) = update { copy(networkLabelDraft=value.take(40)) }
     fun cancelReview() = openHome()
-    fun openHome() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HOME, selectedSignal=null) } }
-    fun openHistory() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HISTORY, selectedSignal=null, message=null) }; refreshHistory() }
-    fun openHoneypot() { stopCapture(); update { copy(destination=AppDestination.HONEYPOT, selectedSignal=null) }; refreshHoneypotSessions() }
+    fun openHome() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HOME, activeTab=AppDestination.HOME, selectedSignal=null) } }
+    fun openHistory() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HISTORY, activeTab=AppDestination.HISTORY, selectedSignal=null, message=null) }; refreshHistory() }
+    fun openHoneypot() { stopCapture(); update { copy(destination=AppDestination.HONEYPOT, activeTab=AppDestination.HONEYPOT, selectedSignal=null) }; refreshHoneypotSessions() }
     fun refreshHoneypotSessions(selectId:String? = _state.value.selectedHoneypotSessionId) {
         viewModelScope.launch {
             try {
@@ -107,7 +108,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             } catch (_:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,honeypotRemoteMessage="No se pudo consultar el historial remoto. Los eventos locales siguen disponibles.") } }
         }
     }
-    fun openSettings() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
+    fun openSettings() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.SETTINGS, activeTab=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
     fun refreshDevices() { viewModelScope.launch { try { val id=reviews.installationId(); reviews.registerDevice(); val devices=reviews.listDevices(); val own=devices.firstOrNull { it.installationId==id }; update { copy(apiConnection=ApiConnectionState.ONLINE,devices=devices,currentInstallationId=id,deviceNameDraft=own?.deviceName.orEmpty(),deviceMessage="Dispositivo sincronizado con la API.") } } catch (_:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,deviceMessage="API no disponible. La identidad local se conserva.") } } } }
     fun setDeviceName(value:String) = update { copy(deviceNameDraft=value.take(64)) }
     fun saveDeviceName() { viewModelScope.launch { try { reviews.renameDevice(_state.value.deviceNameDraft.trim()); update { copy(devices=reviews.listDevices(),deviceMessage="Nombre actualizado.") } } catch (_:Exception) { update { copy(deviceMessage="No se pudo actualizar el dispositivo.") } } } }
@@ -117,7 +118,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         stopHoneypot()
         val label=_state.value.networkLabelDraft.trim().takeIf { it.isNotEmpty() }
         resultParent = AppDestination.HOME
-        update { copy(destination=AppDestination.LIVE_REVIEW, working=true, message=null, selectedSignal=null) }
+        update { copy(destination=AppDestination.LIVE_REVIEW, activeTab=AppDestination.HOME, working=true, message=null, selectedSignal=null) }
         captureJob = viewModelScope.launch {
             try {
                 val review=reviews.captureAndSave(label)

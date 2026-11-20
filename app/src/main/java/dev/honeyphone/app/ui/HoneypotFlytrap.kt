@@ -82,7 +82,10 @@ private class FlytrapWebView(
             }
         }
 
-        val html = context.assets.open("honeypot_trap.html").bufferedReader().use { it.readText() }
+        val htmlTemplate = context.assets.open("honeypot_trap.html").bufferedReader().use { it.readText() }
+        val svg = context.assets.open("honeypot_capture.svg").bufferedReader().use { it.readText() }
+            .replaceFirst(Regex("^\\s*<\\?xml[^>]*>"), "")
+        val html = htmlTemplate.replace("<!-- HONEYPOT_SVG -->", svg)
         loadDataWithBaseURL(
             "https://appassets.androidplatform.net/assets/",
             html,
