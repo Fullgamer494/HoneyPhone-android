@@ -1,6 +1,7 @@
 package dev.honeyphone.app.ui
 
 import android.graphics.Color as AndroidColor
+import android.util.Base64
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -82,10 +83,11 @@ private class FlytrapWebView(
             }
         }
 
-        val htmlTemplate = context.assets.open("honeypot_trap.html").bufferedReader().use { it.readText() }
-        val svg = context.assets.open("honeypot_capture.svg").bufferedReader().use { it.readText() }
-            .replaceFirst(Regex("^\\s*<\\?xml[^>]*>"), "")
-        val html = htmlTemplate.replace("<!-- HONEYPOT_SVG -->", svg)
+        var html = context.assets.open("honeypot_trap.html").bufferedReader().use { it.readText() }
+        for (name in listOf("open", "closed", "fly", "moth", "wasp", "roach")) {
+            val png = context.assets.open("flytrap_$name.png").use { it.readBytes() }
+            html = html.replace("{{${name.uppercase()}}}", Base64.encodeToString(png, Base64.NO_WRAP))
+        }
         loadDataWithBaseURL(
             "https://appassets.androidplatform.net/assets/",
             html,

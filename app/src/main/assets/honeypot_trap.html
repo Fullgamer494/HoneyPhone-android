@@ -1,41 +1,65 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <meta name="color-scheme" content="dark">
   <style>
-    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#000; }
-    body { display:grid; place-items:center; }
-    #trap { width:100%; height:100%; display:grid; place-items:center; }
-    svg { display:block; width:100%; height:100%; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:transparent; }
+    #trap { position:relative; width:100%; height:100%; }
+    img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+    #open, #closed { transition:opacity 420ms ease; }
+    #closed { opacity:1; }
+    #open { opacity:0; }
+    .listening #open { opacity:1; }
+    .listening #closed { opacity:0; }
+    .capture #closed { animation:jawClose 2.8s ease-in-out both; }
+    .capture #open { animation:jawOpen 2.8s ease-in-out both; }
+    .insect { opacity:0; }
+    .capture .insect.active { animation:flight 2.8s ease-in-out both; }
+    @keyframes jawClose { 0%,30%,78%,100% {opacity:0} 39%,68% {opacity:1} }
+    @keyframes jawOpen { 0%,30%,78%,100% {opacity:1} 39%,68% {opacity:0} }
+    @keyframes flight {
+      0% { opacity:0; transform:translate(-50%,-40%) rotate(-15deg) scale(.8); }
+      12% { opacity:1; }
+      32% { opacity:1; transform:translate(-8%,-10%) rotate(8deg) scale(1); }
+      39% { opacity:1; transform:translate(0,0) rotate(-8deg) scale(.92); }
+      48% { opacity:.7; transform:translate(-2%,1%) rotate(12deg) scale(.85); }
+      70%,100% { opacity:0; transform:translate(0,5%) rotate(0) scale(.7); }
+    }
   </style>
 </head>
 <body>
-  <div id="trap"><!-- HONEYPOT_SVG --></div>
+  <div id="trap">
+    <img id="open" src="data:image/png;base64,{{OPEN}}" alt="">
+    <img id="closed" src="data:image/png;base64,{{CLOSED}}" alt="">
+    <img class="insect" src="data:image/png;base64,{{FLY}}" alt="">
+    <img class="insect" src="data:image/png;base64,{{MOTH}}" alt="">
+    <img class="insect" src="data:image/png;base64,{{WASP}}" alt="">
+    <img class="insect" src="data:image/png;base64,{{ROACH}}" alt="">
+  </div>
   <script>
-    (function () {
-      const trap = document.querySelector('svg');
-      let lastEventId = null;
-      let eventTimer = null;
-      window.honeyphoneSetState = function (listening, eventId, animateEvent) {
-        trap.classList.toggle('is-closed', !listening);
-        const changed = eventId !== lastEventId;
-        lastEventId = eventId;
-        if (eventTimer) window.clearTimeout(eventTimer);
-        if (listening && animateEvent && changed) {
-          trap.classList.remove('is-event');
-          void trap.getBoundingClientRect();
-          trap.classList.add('is-event');
-          eventTimer = window.setTimeout(function () {
-            trap.classList.remove('is-event');
-            eventTimer = null;
-          }, 24100);
-        } else if (!listening) {
-          trap.classList.remove('is-event');
-        }
-      };
-    })();
+    const trap = document.getElementById('trap');
+    const insects = Array.from(document.querySelectorAll('.insect'));
+    let lastEventId = null;
+    let eventCount = 0;
+    let eventTimer = null;
+    window.honeyphoneSetState = function (listening, eventId, animateEvent) {
+      trap.classList.toggle('listening', listening);
+      if (eventTimer) clearTimeout(eventTimer);
+      trap.classList.remove('capture');
+      insects.forEach(insect => insect.classList.remove('active'));
+      if (listening && animateEvent && eventId && eventId !== lastEventId) {
+        insects[eventCount++ % insects.length].classList.add('active');
+        void trap.offsetWidth;
+        trap.classList.add('capture');
+        eventTimer = setTimeout(() => {
+          trap.classList.remove('capture');
+          insects.forEach(insect => insect.classList.remove('active'));
+          eventTimer = null;
+        }, 2900);
+      }
+      lastEventId = eventId;
+    };
   </script>
 </body>
 </html>
