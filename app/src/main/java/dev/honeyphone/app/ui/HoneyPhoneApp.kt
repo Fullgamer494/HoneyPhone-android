@@ -19,17 +19,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import dev.honeyphone.app.model.*
+import dev.honeyphone.app.R
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -54,11 +55,6 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
         viewModel.clearMessage()
     }
     val canGoBack = state.destination in setOf(AppDestination.LIVE_REVIEW, AppDestination.DEMO_GALLERY, AppDestination.RESULT, AppDestination.DETAIL)
-    val apiIndicator = when(state.apiConnection) {
-        ApiConnectionState.CHECKING -> "API · ?" to HoneyStyle.Muted
-        ApiConnectionState.ONLINE -> "API · OK" to HoneyStyle.Lime
-        ApiConnectionState.OFFLINE -> "API · OFFLINE" to HoneyStyle.Amber
-    }
     BackHandler(enabled=canGoBack) { viewModel.goBack() }
     Box(Modifier.fillMaxSize()) {
         TechBackground()
@@ -68,11 +64,8 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                 TopAppBar(
                     title={
                         Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            PixelMark(Modifier.size(28.dp))
-                            Column {
-                                Text("honeyphone", style=MaterialTheme.typography.titleMedium)
-                                Text("INDICADORES WI-FI", style=MaterialTheme.typography.labelSmall, color=HoneyStyle.Muted, letterSpacing=1.sp)
-                            }
+                            Image(painterResource(R.drawable.ic_honeyphone),contentDescription=null,modifier=Modifier.size(36.dp))
+                            Text("HoneyPhone", style=MaterialTheme.typography.titleMedium)
                         }
                     },
                     navigationIcon={
@@ -81,7 +74,6 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                         }
                     },
                     actions={
-                        StatusPill(apiIndicator.first, apiIndicator.second)
                         IconButton(onClick={showQuickGuide=true}) { Icon(Icons.Default.Info,contentDescription="Guía y privacidad",tint=HoneyStyle.Muted) }
                         Spacer(Modifier.width(8.dp))
                     },
@@ -103,7 +95,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                                 AppDestination.SETTINGS -> viewModel.openSettings()
                                 else -> viewModel.openHome()
                             }
-                        },icon={Icon(icon,contentDescription=null)},label={Text(label)},
+                        },icon={Icon(icon,contentDescription=null)},label={Text(label,maxLines=1,fontSize=10.sp)},
                             colors=NavigationBarItemDefaults.colors(selectedIconColor=HoneyStyle.Lime,
                                 selectedTextColor=HoneyStyle.Lime, indicatorColor=HoneyStyle.Lime.copy(alpha=0.1f),
                                 unselectedIconColor=HoneyStyle.Muted,unselectedTextColor=HoneyStyle.Muted))
@@ -113,7 +105,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when(state.destination) {
-                    AppDestination.HOME -> HomeScreen(state.networkLabelDraft,state.history,state.review,viewModel::setNetworkLabel,viewModel::openLivePreview,viewModel::openDemoGallery,viewModel::refreshApiStatus,viewModel::openHistoryReview,viewModel::syncCurrent,viewModel::exportCurrent,state.message)
+                    AppDestination.HOME -> HomeScreen(state.networkLabelDraft,state.history,state.review,viewModel::setNetworkLabel,viewModel::openLivePreview,viewModel::openDemoGallery,viewModel::openHistoryReview,viewModel::syncCurrent,viewModel::exportCurrent,state.message)
                     AppDestination.LIVE_REVIEW -> LiveScreen(state.working,state.message,viewModel::cancelReview)
                     AppDestination.DEMO_GALLERY -> DemoScreen(state.scenarios,viewModel::openDemo)
                     AppDestination.RESULT -> state.review?.let {
@@ -134,7 +126,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                     AppDestination.HISTORY -> ActivityScreen(state.history,state.honeypotEvents,state.honeypotSessions,state.remoteHoneypotEvents,state.selectedHoneypotSessionId,state.honeypotRemoteMessage,state.working,state.message,viewModel::refreshHistory,viewModel::refreshHoneypotSessions,viewModel::clearHoneypotEvents,viewModel::openHistoryReview)
                     AppDestination.HONEYPOT -> HoneypotHomeScreen(state.honeypotStatus,state.honeypotEvents,
                         viewModel::startHoneypot,viewModel::stopHoneypot,viewModel::clearHoneypotEvents)
-                    AppDestination.SETTINGS -> SystemScreen(state.devices,state.deviceNameDraft,state.deviceMessage,state.currentInstallationId,viewModel::setDeviceName,viewModel::saveDeviceName,viewModel::revokeDevice,viewModel::refreshDevices,viewModel::openDemoGallery)
+                    AppDestination.SETTINGS -> SystemScreen(state.devices,state.deviceNameDraft,state.deviceMessage,state.currentInstallationId,state.apiConnection,viewModel::setDeviceName,viewModel::saveDeviceName,viewModel::revokeDevice,viewModel::refreshDevices,viewModel::refreshApiStatus,viewModel::openDemoGallery)
                 }
             }
         }
@@ -153,15 +145,6 @@ private fun TechBackground() {
         while(x<size.width){drawLine(HoneyStyle.Line.copy(alpha=0.11f),Offset(x,0f),Offset(x,size.height),0.5.dp.toPx());x+=step}
         var y=0f
         while(y<size.height){drawLine(HoneyStyle.Line.copy(alpha=0.11f),Offset(0f,y),Offset(size.width,y),0.5.dp.toPx());y+=step}
-    }
-}
-
-@Composable
-private fun PixelMark(modifier: Modifier=Modifier) {
-    Canvas(modifier) {
-        val pattern=listOf("1100011","1100011","1100011","1111111","1100011","1100011","1100011")
-        val unit=size.width/8f
-        pattern.forEachIndexed { y,row-> row.forEachIndexed { x,c->if(c=='1') drawRect(HoneyStyle.Lime,Offset(x*unit,y*unit),Size(unit*0.72f,unit*0.72f)) } }
     }
 }
 
@@ -211,16 +194,16 @@ private fun SecondaryAction(text: String,enabled: Boolean=true,icon: ImageVector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:ReviewPresentation?,onLabel:(String)->Unit,onLive: ()->Unit,onDemo: ()->Unit,onRefreshApi:()->Unit,onOpenReview:(String)->Unit,onSync:()->Unit,onExport:()->Unit,message:String?) {
+private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:ReviewPresentation?,onLabel:(String)->Unit,onLive: ()->Unit,onDemo: ()->Unit,onOpenReview:(String)->Unit,onSync:()->Unit,onExport:()->Unit,message:String?) {
     var selectedSignal by remember { mutableStateOf<SignalPresentation?>(null) }
     val latest=history.filter { it.source==ReviewSource.LIVE }.maxByOrNull { it.createdAt }
     val metrics=latest?.wifiMetrics
     val latestReview=review?.takeIf { it.source==ReviewSource.LIVE && it.checkId==latest?.checkId }
     val signals=latestReview?.signals?.associateBy { it.kind }.orEmpty()
     Page {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column { Eyebrow("Red / lectura real",HoneyStyle.Muted); Text("Red Wi-Fi",style=MaterialTheme.typography.headlineSmall) }
-            StatusPill(if(latest==null)"SIN LECTURA" else syncLabel(latest.syncStatus),if(latest==null)HoneyStyle.Muted else syncColor(latest.syncStatus))
+        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Eyebrow("Red / lectura real",HoneyStyle.Muted)
+            Text("Red Wi-Fi",style=MaterialTheme.typography.headlineSmall)
         }
         Glass(accent=HoneyStyle.Line) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
@@ -240,10 +223,8 @@ private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:Revie
                 label={Text("Etiqueta opcional")},placeholder={Text("Ej. Sala A")},isError=!validManualLabel(label))
             PrimaryAction("Escanear red",enabled=validManualLabel(label),onClick=onLive)
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Eyebrow("Indicadores de la última revisión",HoneyStyle.Muted)
-            latest?.let { TextButton(onClick={onOpenReview(it.checkId)}) { Text("Ver informe") } }
-        }
+        Eyebrow("Última revisión",HoneyStyle.Muted)
+        latest?.let { TextButton(onClick={onOpenReview(it.checkId)}) { Text("Ver informe") } }
         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 SignalGridCell(SignalKind.WIFI_SECURITY,signals[SignalKind.WIFI_SECURITY],Modifier.weight(1f)){ signals[SignalKind.WIFI_SECURITY]?.let { selectedSignal=it } ?: latest?.let { onOpenReview(it.checkId) } }
@@ -254,12 +235,9 @@ private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:Revie
                 SignalGridCell(SignalKind.HTTPS,signals[SignalKind.HTTPS],Modifier.weight(1f)){ signals[SignalKind.HTTPS]?.let { selectedSignal=it } ?: latest?.let { onOpenReview(it.checkId) } }
             }
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Text("${history.count { it.source==ReviewSource.LIVE }} lecturas guardadas",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-            TextButton(onClick=onRefreshApi){Text("Estado API")}
-        }
+        Text("${history.count { it.source==ReviewSource.LIVE }} lecturas guardadas",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
         if(latestReview!=null) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick=onSync,modifier=Modifier.weight(1f)){Icon(Icons.Default.CloudUpload,null);Spacer(Modifier.width(6.dp));Text("Enviar API")}
+            OutlinedButton(onClick=onSync,modifier=Modifier.weight(1f)){Icon(Icons.Default.CloudUpload,null);Spacer(Modifier.width(6.dp));Text("Enviar",maxLines=1)}
             OutlinedButton(onClick=onExport,modifier=Modifier.weight(1f)){Icon(Icons.Default.Code,null);Spacer(Modifier.width(6.dp));Text("JSON")}
         }
         message?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted) }
@@ -429,7 +407,7 @@ private fun ActivityScreen(
     val filtered=latest.filter { labelFilter==null || it.networkLabel.orEmpty()==labelFilter }
     Page {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column { Eyebrow("Registro local + API",HoneyStyle.Muted); Text("Actividad",style=MaterialTheme.typography.headlineMedium) }
+            Column { Eyebrow("Historial de actividad",HoneyStyle.Muted); Text("Actividad",style=MaterialTheme.typography.headlineMedium) }
             Text("${wifiItems.size+localEvents.size}",fontFamily=HoneyStyle.Dots,style=MaterialTheme.typography.headlineSmall,color=HoneyStyle.Ink)
         }
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -444,7 +422,7 @@ private fun ActivityScreen(
             }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 Text("${filtered.size} lecturas",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-                TextButton(enabled=!working,onClick=onRefreshWifi){Text(if(working)"Actualizando…" else "Actualizar API")}
+                TextButton(enabled=!working,onClick=onRefreshWifi){Text(if(working)"Actualizando…" else "Actualizar")}
             }
             if(working) LinearProgressIndicator(Modifier.fillMaxWidth(),color=HoneyStyle.Ink,trackColor=HoneyStyle.Line)
             message?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted) }
@@ -496,7 +474,7 @@ private fun ActivityScreen(
                 ActivityEventRow("${event.method} ${event.path}",event.sourceAddress,event.userAgent,Date(event.occurredAt),event.responseCode,"LOCAL")
             }
             remoteEvents.forEach { event ->
-                ActivityEventRow("${event.method} ${event.path}",event.sourceIpMasked,event.userAgentFamily ?: "Desconocido",Date(event.occurredAt),event.responseCode,"API")
+                ActivityEventRow("${event.method} ${event.path}",event.sourceIpMasked,event.userAgentFamily ?: "Desconocido",Date(event.occurredAt),event.responseCode,"REMOTO")
             }
             if(localEvents.isEmpty()&&remoteEvents.isEmpty()) Text("Las peticiones del señuelo aparecerán aquí cuando inicies una sesión.",style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted)
         }
@@ -529,7 +507,7 @@ private fun SignalSparkline(values:List<Int>) {
 }
 
 @Composable
-private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessage:String?,currentInstallationId:String,onDeviceName:(String)->Unit,onSaveDevice:()->Unit,onRevokeDevice:()->Unit,onRefreshDevices:()->Unit,onDemos:()->Unit) {
+private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessage:String?,currentInstallationId:String,apiConnection:ApiConnectionState,onDeviceName:(String)->Unit,onSaveDevice:()->Unit,onRevokeDevice:()->Unit,onRefreshDevices:()->Unit,onRefreshApi:()->Unit,onDemos:()->Unit) {
     Page {
         Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Eyebrow("Dispositivo + configuración",HoneyStyle.Muted)
@@ -541,8 +519,8 @@ private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessag
             Text("UUID · ${currentInstallationId.ifBlank { "registrando…" }}",fontFamily=HoneyStyle.Mono,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             OutlinedTextField(value=deviceName,onValueChange=onDeviceName,label={Text("Alias")},singleLine=true,modifier=Modifier.fillMaxWidth())
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                Button(onClick=onSaveDevice,modifier=Modifier.weight(1f)){Text("Guardar alias")}
-                OutlinedButton(onClick=onRefreshDevices,modifier=Modifier.weight(1f)){Text("Actualizar API")}
+                Button(onClick=onSaveDevice,modifier=Modifier.weight(1f)){Text("Guardar",maxLines=1)}
+                OutlinedButton(onClick=onRefreshDevices,modifier=Modifier.weight(1f)){Text("Actualizar",maxLines=1)}
             }
             deviceMessage?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted) }
             if(devices.any { it.installationId==currentInstallationId && it.active }) TextButton(onClick=onRevokeDevice){Text("Revocar esta instalación",color=HoneyStyle.Amber)}
@@ -574,6 +552,11 @@ private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessag
             Eyebrow("Sondas DNS / HTTPS",HoneyStyle.Muted)
             Text(if(dev.honeyphone.app.core.network.ProbeConfig.load()==null)"Destino controlado pendiente" else "Destino de prueba configurado",style=MaterialTheme.typography.titleMedium)
             Text("DNS y HTTPS solo se comprueban contra destinos configurados por el proyecto.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        }
+        Glass {
+            Eyebrow("Conexión con el servidor",HoneyStyle.Muted)
+            Text(when(apiConnection){ApiConnectionState.CHECKING->"Comprobando conexión";ApiConnectionState.ONLINE->"Servidor disponible";ApiConnectionState.OFFLINE->"Servidor no disponible"},style=MaterialTheme.typography.titleMedium)
+            TextButton(onClick=onRefreshApi){Text("Comprobar conexión")}
         }
         SecondaryAction("Ejemplos DEMO",icon=Icons.Default.Science,onClick=onDemos)
     }
