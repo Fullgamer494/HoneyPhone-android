@@ -9,14 +9,14 @@ import androidx.compose.ui.unit.sp
 import dev.honeyphone.app.R
 
 object HoneyStyle {
-    val Background = Color(0xFF080D0B)
-    val Surface = Color(0xFF14201A)
-    val Ink = Color(0xFFF1F5EC)
-    val Muted = Color(0xFFA7B5A9)
-    val Lime = Color(0xFFD4FF33)
-    val Aqua = Color(0xFF32DEBC)
-    val Amber = Color(0xFFFFCA7A)
-    val Line = Color(0xFF324238)
+    val Background = Color(0xFF000000)
+    val Surface = Color(0xFF090A0B)
+    val Ink = Color(0xFFF4F4F4)
+    val Muted = Color(0xFFB4B7BA)
+    val Lime = Color(0xFFFFFFFF)
+    val Aqua = Color(0xFFD0D3D6)
+    val Amber = Color(0xFFF5B700)
+    val Line = Color(0xFF242830)
     val Mono = FontFamily(Font(R.font.space_mono))
     val Dots = FontFamily(Font(R.font.doto, FontWeight.Bold))
     val Sans = FontFamily(Font(R.font.poppins_regular), Font(R.font.poppins_semibold, FontWeight.SemiBold))

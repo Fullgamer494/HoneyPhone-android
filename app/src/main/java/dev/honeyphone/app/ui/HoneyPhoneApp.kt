@@ -131,15 +131,11 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
 private fun TechBackground() {
     Canvas(Modifier.fillMaxSize()) {
         drawRect(HoneyStyle.Background)
-        drawRect(Brush.radialGradient(listOf(HoneyStyle.Lime.copy(alpha=0.065f),Color.Transparent),
-            center=Offset(size.width*0.95f,size.height*0.18f),radius=size.width*0.9f))
-        drawRect(Brush.radialGradient(listOf(HoneyStyle.Aqua.copy(alpha=0.035f),Color.Transparent),
-            center=Offset(0f,size.height*0.8f),radius=size.width))
-        val step=32.dp.toPx()
+        val step=24.dp.toPx()
         var x=0f
-        while(x<size.width){drawLine(HoneyStyle.Line.copy(alpha=0.12f),Offset(x,0f),Offset(x,size.height),0.5.dp.toPx());x+=step}
+        while(x<size.width){drawLine(HoneyStyle.Line.copy(alpha=0.22f),Offset(x,0f),Offset(x,size.height),0.5.dp.toPx());x+=step}
         var y=0f
-        while(y<size.height){drawLine(HoneyStyle.Line.copy(alpha=0.12f),Offset(0f,y),Offset(size.width,y),0.5.dp.toPx());y+=step}
+        while(y<size.height){drawLine(HoneyStyle.Line.copy(alpha=0.22f),Offset(0f,y),Offset(size.width,y),0.5.dp.toPx());y+=step}
     }
 }
 
@@ -160,10 +156,10 @@ private fun Page(content: @Composable ColumnScope.()->Unit) {
 
 @Composable
 private fun Glass(modifier: Modifier=Modifier, accent: Color=HoneyStyle.Line, glow: Boolean=false, content: @Composable ColumnScope.()->Unit) {
-    Surface(modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),
-        color=HoneyStyle.Surface.copy(alpha=0.82f),contentColor=HoneyStyle.Ink,
-        border=BorderStroke(1.dp,accent.copy(alpha=0.65f))) {
-        Column(Modifier.then(if(glow) Modifier.background(Brush.verticalGradient(listOf(Color.Transparent,Color.Transparent,HoneyStyle.Lime.copy(alpha=0.13f)))) else Modifier).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
+    Surface(modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),
+        color=HoneyStyle.Surface,contentColor=HoneyStyle.Ink,
+        border=BorderStroke(1.dp,accent.copy(alpha=if(glow) 0.95f else 0.72f))) {
+        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)
     }
 }
 
@@ -491,6 +487,9 @@ private fun HoneypotScreen(
     Page {
         Heading("HoneyPhone / señuelo","Observa intentos HTTP en tu Wi-Fi")
         Text("Este es un listener HTTP real del teléfono. Inícialo manualmente y prueba desde otro dispositivo conectado a la misma Wi-Fi.",color=HoneyStyle.Muted,style=MaterialTheme.typography.bodyLarge)
+        Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center) {
+            HoneypotFlytrap(status.phase==HoneypotPhase.LISTENING,events.firstOrNull()?.id)
+        }
         InfoStrip("Alcance","Solo acepta conexiones dirigidas a la IPv4 Wi-Fi del teléfono. Úsalo en una red propia o con autorización; la red debe permitir comunicación entre dispositivos.",HoneyStyle.Amber)
         Glass(accent=if(status.phase==HoneypotPhase.LISTENING) HoneyStyle.Lime else HoneyStyle.Line,glow=status.phase==HoneypotPhase.LISTENING) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
