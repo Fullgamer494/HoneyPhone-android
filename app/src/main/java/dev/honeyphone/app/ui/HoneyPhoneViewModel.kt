@@ -98,7 +98,6 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 _state.value = _state.value.copy(history=items)
             }
-            }
         }
         localHoneypotJob=viewModelScope.launch {
             honeypotEvents.observeRecent().collect { events -> update { copy(honeypotEvents=events) } }
