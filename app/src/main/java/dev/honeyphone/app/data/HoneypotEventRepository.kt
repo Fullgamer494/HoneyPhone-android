@@ -42,8 +42,8 @@ class HoneypotEventRepository(context: Context) {
 
     suspend fun clear() = dao.deleteAll()
 
-    private fun HoneypotEventEntity.toModel() = HoneypotEvent(id, occurredAt, sourceAddress, method, path, userAgent, sessionId, responseCode)
-    private fun HoneypotEvent.toEntity() = HoneypotEventEntity(id, occurredAt, sourceAddress, method, path, userAgent, sessionId, responseCode)
+    private fun HoneypotEventEntity.toModel() = HoneypotEvent(id, occurredAt, sourceAddress, method, path, userAgent, sessionId, responseCode, requestDetails)
+    private fun HoneypotEvent.toEntity() = HoneypotEventEntity(id, occurredAt, sourceAddress, method, path, userAgent, sessionId, responseCode, requestDetails = requestDetails)
 
     private fun maskAddress(value:String):String {
         val address=InetAddress.getByName(value)

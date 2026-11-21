@@ -63,4 +63,5 @@ data class HoneypotEventEntity(
     val sessionId: String? = null,
     val responseCode: Int = 404,
     val syncStatus: String = "pending",
+    val requestDetails: String = "{}",
 )

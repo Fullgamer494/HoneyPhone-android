@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
+import org.json.JSONObject
 
 /**
  * User-started HTTP decoy. It binds only to the current Wi-Fi address, records request
@@ -226,6 +227,7 @@ class LocalHttpHoneypot(
                 path = request.path,
                 userAgent = request.userAgent,
                 responseCode = status,
+                requestDetails = JSONObject(request.details).put("source_port", socket.port).toString(),
             ),
         )
         writeResponse(socket, status, renderDecoyPage(request, status))
@@ -279,11 +281,33 @@ class LocalHttpHoneypot(
             ?.filter { it.isLetterOrDigit() || it in "/._~%-" }
             ?.takeIf { it.startsWith('/') }
             ?: return null
-        val userAgent = lines.drop(1).firstNotNullOfOrNull { line ->
-            if (line.startsWith("User-Agent:", ignoreCase = true)) line.substringAfter(':').trim() else null
-        }.orEmpty().filter { it.code in 32..126 }.take(MAX_USER_AGENT_LENGTH)
-        return ParsedRequest(requestParts[0].uppercase(Locale.ROOT), path, userAgent)
+        val headers = lines.drop(1).mapNotNull { line ->
+            val separator = line.indexOf(':')
+            if (separator <= 0) null else line.substring(0, separator).trim().lowercase(Locale.ROOT) to line.substring(separator + 1).trim()
+        }.toMap()
+        fun header(name: String, max: Int): String = headers[name].orEmpty()
+            .filter { it.code in 32..126 }.take(max)
+        val userAgent = header("user-agent", MAX_USER_AGENT_LENGTH)
+        val details = JSONObject()
+            .put("http_version", requestParts.getOrNull(2)?.takeIf { it.matches(Regex("HTTP/1\\.[01]")) } ?: "unknown")
+            .put("host", header("host", 150))
+            .put("referer", safeOriginAndPath(header("referer", 300)))
+            .put("origin", safeOriginAndPath(header("origin", 300)))
+            .put("accept_language", header("accept-language", 100))
+            .put("accept", header("accept", 120))
+            .put("content_type", header("content-type", 100))
+            .put("content_length", header("content-length", 12).filter(Char::isDigit))
+            .put("connection", header("connection", 40))
+            .toString()
+        return ParsedRequest(requestParts[0].uppercase(Locale.ROOT), path, userAgent, details)
     }
+
+    private fun safeOriginAndPath(value: String): String = runCatching {
+        val uri = URI(value)
+        val host = uri.host ?: return@runCatching ""
+        val path = uri.rawPath.orEmpty().take(MAX_PATH_LENGTH).filter { it.isLetterOrDigit() || it in "/._~%-" }
+        "${uri.scheme ?: "http"}://$host$path"
+    }.getOrDefault("")
 
     private fun writeResponse(socket: Socket, status: Int, content: String) {
         val body = content
@@ -297,9 +321,9 @@ class LocalHttpHoneypot(
         }
     }
 
-    private data class ParsedRequest(val method: String, val path: String, val userAgent: String)
+    private data class ParsedRequest(val method: String, val path: String, val userAgent: String, val details: String)
 
-    private companion object {
+    companion object {
         const val PORT = 8080
         const val BACKLOG = 16
         const val READ_TIMEOUT_MS = 2_000

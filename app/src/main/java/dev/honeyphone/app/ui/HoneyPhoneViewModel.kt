@@ -7,7 +7,8 @@ import androidx.lifecycle.viewModelScope
 import dev.honeyphone.app.data.AssetDemoReviewRepository
 import dev.honeyphone.app.data.HoneypotEventRepository
 import dev.honeyphone.app.data.RoomReviewRepository
-import dev.honeyphone.app.core.honeypot.LocalHttpHoneypot
+import dev.honeyphone.app.core.honeypot.HoneypotBackgroundService
+import dev.honeyphone.app.core.honeypot.HoneypotRuntime
 import dev.honeyphone.app.model.AppDestination
 import dev.honeyphone.app.model.HoneyPhoneUiState
 import dev.honeyphone.app.model.HoneypotPhase
@@ -42,13 +43,9 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     private var captureJob: Job? = null
     private var resultParent = AppDestination.HOME
     private var galleryParent = AppDestination.HOME
-    private var honeypotServer: LocalHttpHoneypot? = null
-    private var honeypotSessionId: String? = null
-    private var honeypotSessionStartedAt: String? = null
 
     fun goBack() {
         if (_state.value.destination == AppDestination.LIVE_REVIEW) { cancelReview(); return }
-        if (_state.value.destination == AppDestination.HONEYPOT) stopHoneypot()
         update { copy(destination=when(destination) {
             AppDestination.DETAIL -> AppDestination.RESULT
             AppDestination.RESULT -> resultParent
@@ -76,6 +73,9 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             honeypotEvents.observeRecent().collect { events -> update { copy(honeypotEvents=events) } }
         }
+        viewModelScope.launch {
+            HoneypotRuntime.status.collect { status -> update { copy(honeypotStatus=status) } }
+        }
     }
 
     fun refreshApiStatus() {
@@ -91,8 +91,8 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
     fun setNetworkLabel(value:String) = update { copy(networkLabelDraft=value.take(40)) }
     fun cancelReview() = openHome()
-    fun openHome() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HOME, activeTab=AppDestination.HOME, selectedSignal=null) } }
-    fun openHistory() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.HISTORY, activeTab=AppDestination.HISTORY, selectedSignal=null, message=null) }; refreshHistory() }
+    fun openHome() { stopCapture(); update { copy(destination=AppDestination.HOME, activeTab=AppDestination.HOME, selectedSignal=null) } }
+    fun openHistory() { stopCapture(); update { copy(destination=AppDestination.HISTORY, activeTab=AppDestination.HISTORY, selectedSignal=null, message=null) }; refreshHistory() }
     fun openHoneypot() { stopCapture(); update { copy(destination=AppDestination.HONEYPOT, activeTab=AppDestination.HONEYPOT, selectedSignal=null) }; refreshHoneypotSessions() }
     fun refreshHoneypotSessions(selectId:String? = _state.value.selectedHoneypotSessionId) {
         viewModelScope.launch {
@@ -109,7 +109,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             } catch (_:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,honeypotRemoteMessage="No se pudo consultar el historial remoto. Los eventos locales siguen disponibles.") } }
         }
     }
-    fun openSettings() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.SETTINGS, activeTab=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
+    fun openSettings() { stopCapture(); update { copy(destination=AppDestination.SETTINGS, activeTab=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
     fun refreshDevices() { viewModelScope.launch {
         try {
             val id=reviews.installationId()
@@ -129,7 +129,6 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun revokeDevice() { viewModelScope.launch { try { reviews.revokeDevice(); update { copy(devices=reviews.listDevices(),deviceMessage="Dispositivo revocado. No podrá enviar comprobaciones.") } } catch (_:Exception) { update { copy(deviceMessage="No se pudo revocar el dispositivo.") } } } }
     fun openLivePreview() {
         if(_state.value.working || !validManualLabel(_state.value.networkLabelDraft)) return
-        stopHoneypot()
         val label=_state.value.networkLabelDraft.trim().takeIf { it.isNotEmpty() }
         resultParent = AppDestination.HOME
         update { copy(destination=AppDestination.LIVE_REVIEW, activeTab=AppDestination.HOME, working=true, message=null, selectedSignal=null) }
@@ -143,7 +142,6 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
     fun openDemoGallery() {
         stopCapture()
-        stopHoneypot()
         galleryParent = if (_state.value.destination == AppDestination.SETTINGS) AppDestination.SETTINGS else AppDestination.HOME
         update { copy(destination=AppDestination.DEMO_GALLERY, selectedSignal=null) }
     }
@@ -218,56 +216,17 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun startHoneypot() {
         if (_state.value.honeypotStatus.phase in setOf(HoneypotPhase.STARTING, HoneypotPhase.LISTENING)) return
         val profile=_state.value.selectedHoneypotProfile
+        val id=UUID.randomUUID().toString()
+        val startedAt=Instant.now().toString()
         update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.STARTING,profile=profile),message=null) }
-        viewModelScope.launch {
-            val id=UUID.randomUUID().toString()
-            val startedAt=Instant.now().toString()
-            try {
-                withContext(Dispatchers.IO) {
-                    reviews.registerDevice()
-                    reviews.saveHoneypotSession(JSONObject().put("session_id",id).put("installation_id",reviews.installationId())
-                        .put("source","LIVE").put("listen_port",8080).put("started_at",startedAt).put("ended_at",JSONObject.NULL).put("state","RUNNING"))
-                }
-                honeypotSessionId=id
-                honeypotSessionStartedAt=startedAt
-                val server = LocalHttpHoneypot(getApplication(),
-                    onStatus = { status ->
-                        update { copy(honeypotStatus=status.copy(profile=profile)) }
-                        if(status.phase==HoneypotPhase.ERROR) closeHoneypotSession("INTERRUPTED")
-                    },
-                    onEvent = { event -> viewModelScope.launch(Dispatchers.IO) {
-                        honeypotEvents.record(event.copy(sessionId=id))
-                        honeypotEvents.syncPending()
-                    } },
-                    profile = profile,
-                )
-                honeypotServer=server
-                server.start()
-                refreshHoneypotSessions(id)
-            } catch (_:Exception) {
-                update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.ERROR,message="No se pudo preparar la sesión con el servidor. Comprueba la conexión y que esta instalación esté habilitada.",profile=profile)) }
-            }
-        }
+        runCatching { HoneypotBackgroundService.start(getApplication(),profile,id,startedAt) }
+            .onFailure { error -> HoneypotRuntime.update(HoneypotStatus(HoneypotPhase.ERROR,message=error.message ?: "Android no pudo iniciar el servicio del señuelo.",profile=profile)) }
+        refreshHoneypotSessions(id)
     }
 
     fun stopHoneypot() {
-        honeypotServer?.stop()
-        honeypotServer = null
-        update { copy(honeypotStatus=HoneypotStatus(profile=_state.value.selectedHoneypotProfile)) }
-        closeHoneypotSession("STOPPED")
-    }
-
-    private fun closeHoneypotSession(finalState:String) {
-        val id=honeypotSessionId ?: return
-        val started=honeypotSessionStartedAt ?: return
-        honeypotSessionId=null
-        honeypotSessionStartedAt=null
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { reviews.saveHoneypotSession(JSONObject().put("session_id",id).put("installation_id",reviews.installationId())
-                .put("source","LIVE").put("listen_port",8080).put("started_at",started).put("ended_at",Instant.now().toString()).put("state",finalState)) }
-                .onSuccess { refreshHoneypotSessions(id) }
-                .onFailure { update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.STOPPED,message="El listener se detuvo, pero no se pudo sincronizar el cierre de sesión.")) } }
-        }
+        HoneypotBackgroundService.stop(getApplication())
+        HoneypotRuntime.update(HoneypotStatus(profile=_state.value.selectedHoneypotProfile))
     }
 
     fun clearHoneypotEvents() {
@@ -275,9 +234,6 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     override fun onCleared() {
-        honeypotServer?.stop()
-        honeypotServer = null
-        closeHoneypotSession("INTERRUPTED")
         super.onCleared()
     }
 

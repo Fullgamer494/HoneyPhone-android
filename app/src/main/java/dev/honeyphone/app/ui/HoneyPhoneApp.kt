@@ -4,8 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,8 +36,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import dev.honeyphone.app.model.*
 import dev.honeyphone.app.R
+import org.json.JSONObject
 import java.io.File
 import java.text.DateFormat
 import java.time.Instant
@@ -643,6 +650,16 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
     var confirmClear by remember { mutableStateOf(false) }
     val context=LocalContext.current
     val haptics=androidx.compose.ui.platform.LocalHapticFeedback.current
+    var notificationNotice by remember { mutableStateOf<String?>(null) }
+    val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) { notificationNotice=null; onStart() }
+        else notificationNotice="Para mantener el señuelo visible en segundo plano, permite las notificaciones de HoneyPhone en Ajustes."
+    }
+    val startWithVisibleNotification={
+        if(Build.VERSION.SDK_INT>=33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else onStart()
+    }
     var lastAnimatedEvent by remember { mutableStateOf(events.firstOrNull()?.id) }
     val currentEventId=events.firstOrNull()?.id
     LaunchedEffect(currentEventId,status.phase) {
@@ -704,7 +721,8 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
         }
         if(status.phase==HoneypotPhase.ERROR) status.message?.let { InfoStrip("No se pudo iniciar",it,HoneyStyle.Amber) }
         PrimaryAction(if(status.phase==HoneypotPhase.LISTENING)"Detener señuelo" else if(status.phase==HoneypotPhase.STARTING)"Activando…" else "Activar señuelo",
-            enabled=status.phase!=HoneypotPhase.STARTING,onClick=if(status.phase==HoneypotPhase.LISTENING)onStop else onStart)
+            enabled=status.phase!=HoneypotPhase.STARTING,onClick=if(status.phase==HoneypotPhase.LISTENING)onStop else startWithVisibleNotification)
+        notificationNotice?.let { InfoStrip("Notificación necesaria",it,HoneyStyle.Amber) }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Eyebrow("Solicitudes recibidas",HoneyStyle.Muted)
             if(events.isNotEmpty()) TextButton(onClick={confirmClear=true}) { Text("Borrar") }
@@ -730,7 +748,23 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
                 Text("${DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(event.occurredAt))} · respuesta ${event.responseCode}",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
                 MetricChip("Dirección de origen",event.sourceAddress,Modifier.fillMaxWidth())
                 MetricChip("Navegador o herramienta",userAgentLabel(event.userAgent),Modifier.fillMaxWidth())
-                Text("El contenido de la solicitud no se guarda. Al sincronizar, la dirección de origen se reduce a una red aproximada.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                MetricChip("Sistema declarado por el cliente",clientOsLabel(event.userAgent),Modifier.fillMaxWidth())
+                val metadata=remember(event.requestDetails) { runCatching { JSONObject(event.requestDetails) }.getOrDefault(JSONObject()) }
+                val detailFields=listOf(
+                    "Puerto de origen" to "source_port",
+                    "Versión HTTP" to "http_version",
+                    "Host solicitado" to "host",
+                    "Origen declarado" to "origin",
+                    "Página de procedencia" to "referer",
+                    "Idioma declarado" to "accept_language",
+                    "Tipos de contenido aceptados" to "accept",
+                    "Tipo de contenido enviado" to "content_type",
+                    "Tamaño declarado del cuerpo" to "content_length",
+                    "Conexión" to "connection",
+                )
+                detailFields.forEach { (label,key) -> metadata.optString(key).takeIf(String::isNotBlank)?.let { MetricChip(label,it,Modifier.fillMaxWidth()) } }
+                if(event.userAgent.isNotBlank()) MetricChip("Identificación declarada por el cliente",event.userAgent,Modifier.fillMaxWidth())
+                Text("La dirección es solo la IP visible en esta red. El navegador no revela la MAC ni la ubicación precisa. Se guardan encabezados permitidos; nunca el cuerpo del formulario, cookies ni credenciales. Al sincronizar, la IP se reduce a una red aproximada.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             }
         }
     }
@@ -793,6 +827,14 @@ private fun userAgentLabel(value:String)=when(value.uppercase()) {
         value.isBlank()->"No identificado"
         else->"Otro cliente web"
     }
+}
+private fun clientOsLabel(value:String)=when {
+    value.contains("Android",true)->"Android (declarado por el navegador)"
+    value.contains("iPhone",true)||value.contains("iPad",true)||value.contains("iOS",true)->"iOS / iPadOS (declarado por el navegador)"
+    value.contains("Windows",true)->"Windows (declarado por el navegador)"
+    value.contains("Mac OS",true)||value.contains("Macintosh",true)->"macOS (declarado por el navegador)"
+    value.contains("Linux",true)->"Linux (declarado por el navegador)"
+    else->"No identificado"
 }
 private fun formatServerTimestamp(value:String):String=runCatching {
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(Instant.parse(value).toEpochMilli()))

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [ReviewEntity::class, SignalEntity::class, OutboxEntity::class, HoneypotEventEntity::class], version = 4, exportSchema = true)
+@Database(entities = [ReviewEntity::class, SignalEntity::class, OutboxEntity::class, HoneypotEventEntity::class], version = 5, exportSchema = true)
 abstract class HoneyPhoneDatabase : RoomDatabase() {
     abstract fun reviewDao(): ReviewDao
     abstract fun honeypotDao(): HoneypotDao
@@ -32,9 +32,14 @@ abstract class HoneyPhoneDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `honeypot_events` ADD COLUMN `syncStatus` TEXT NOT NULL DEFAULT 'pending'")
             }
         }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `honeypot_events` ADD COLUMN `requestDetails` TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
         @Volatile private var instance: HoneyPhoneDatabase? = null
         fun get(context: Context): HoneyPhoneDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, HoneyPhoneDatabase::class.java, "honeyphone.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, HoneyPhoneDatabase::class.java, "honeyphone.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
     }
 }

@@ -29,6 +29,7 @@ data class HoneypotEvent(
     val userAgent: String,
     val sessionId: String? = null,
     val responseCode: Int = 404,
+    val requestDetails: String = "{}",
 )
 data class DeviceInfo(val installationId: String, val deviceName: String?, val appVersion: String, val active: Boolean, val lastSeenAt: String)
 data class HoneypotSessionInfo(val sessionId: String, val startedAt: Long, val endedAt: Long?, val state: String, val listenPort: Int)

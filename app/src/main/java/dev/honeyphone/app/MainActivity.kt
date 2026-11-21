@@ -25,8 +25,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStop() {
-        if (::honeyPhoneViewModel.isInitialized) honeyPhoneViewModel.stopHoneypot()
-        super.onStop()
-    }
 }
