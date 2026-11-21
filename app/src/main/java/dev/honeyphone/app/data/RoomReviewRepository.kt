@@ -86,10 +86,10 @@ class RoomReviewRepository(private val context: Context) {
                 "Sincronizada. El servidor confirmó la revisión."
             } catch (e: ApiFailure) {
                 dao.setStatus(id, "failed", e.message)
-                if (e.status == 409) "El servidor tiene otra versión de esta revisión. Conservamos tu copia local para revisarla (conflicto 409)."
-                else "El servidor respondió " + e.status + ". La revisión permanece guardada para reintentar."
+                if (e.status == 409) "El servidor ya tiene otra versión de esta revisión. Conservamos tu copia local para que puedas revisarla."
+                else "No se pudo enviar la revisión. Sigue guardada en el teléfono y puedes volver a intentarlo."
             } catch (e: Exception) {
-                dao.setStatus(id, "failed", e.message ?: "API no disponible")
+                dao.setStatus(id, "failed", e.message ?: "Servidor no disponible")
                 "Guardada en tu teléfono. No pudimos conectar con el servidor; puedes reintentar más tarde."
             }
         }

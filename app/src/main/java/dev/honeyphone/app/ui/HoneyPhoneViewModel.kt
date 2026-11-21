@@ -109,7 +109,20 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
     fun openSettings() { stopCapture(); stopHoneypot(); update { copy(destination=AppDestination.SETTINGS, activeTab=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
-    fun refreshDevices() { viewModelScope.launch { try { val id=reviews.installationId(); reviews.registerDevice(); val devices=reviews.listDevices(); val own=devices.firstOrNull { it.installationId==id }; update { copy(apiConnection=ApiConnectionState.ONLINE,devices=devices,currentInstallationId=id,deviceNameDraft=own?.deviceName.orEmpty(),deviceMessage="Dispositivo sincronizado con la API.") } } catch (_:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,deviceMessage="API no disponible. La identidad local se conserva.") } } } }
+    fun refreshDevices() { viewModelScope.launch {
+        try {
+            val id=reviews.installationId()
+            reviews.registerDevice()
+            val devices=reviews.listDevices()
+            val own=devices.firstOrNull { it.installationId==id }
+            update { copy(apiConnection=ApiConnectionState.ONLINE,devices=devices,currentInstallationId=id,
+                deviceNameDraft=own?.deviceName.orEmpty(),deviceMessage=if(own?.active==false)
+                    "El servidor responde, pero esta instalación está desactivada y no puede enviar datos. Pide al administrador que la habilite."
+                else "Dispositivo conectado al servidor.") }
+        } catch (_:Exception) {
+            update { copy(apiConnection=ApiConnectionState.OFFLINE,deviceMessage="No se pudo conectar con el servidor. La identidad local se conserva.") }
+        }
+    } }
     fun setDeviceName(value:String) = update { copy(deviceNameDraft=value.take(64)) }
     fun saveDeviceName() { viewModelScope.launch { try { reviews.renameDevice(_state.value.deviceNameDraft.trim()); update { copy(devices=reviews.listDevices(),deviceMessage="Nombre actualizado.") } } catch (_:Exception) { update { copy(deviceMessage="No se pudo actualizar el dispositivo.") } } } }
     fun revokeDevice() { viewModelScope.launch { try { reviews.revokeDevice(); update { copy(devices=reviews.listDevices(),deviceMessage="Dispositivo revocado. No podrá enviar comprobaciones.") } } catch (_:Exception) { update { copy(deviceMessage="No se pudo revocar el dispositivo.") } } } }
@@ -146,7 +159,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             update { copy(working=true,message=null) }
             try {
                 val saved=reviews.saveDemo(current)
-                update { copy(review=saved,localSaved=true,working=false,message="Ejemplo DEMO guardado. Siempre se identificará como una simulación.") }
+                update { copy(review=saved,localSaved=true,working=false,message="Ejemplo guardado. Siempre se identificará como una simulación.") }
             } catch(e:Exception) { update { copy(working=false,message=e.message ?: "No se pudo guardar la demostración.") } }
         }
     }
@@ -172,7 +185,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 val pending=_state.value.history.find { it.checkId==checkId }?.syncStatus != "synced"
                 val review=if(pending)reviews.localReview(checkId) else reviews.openRemoteDetail(checkId)
-                update { copy(destination=AppDestination.RESULT,review=review,localSaved=true,working=false,message=if(pending) "Copia local: esta revisión todavía no está enviada." else if(review.source==ReviewSource.DEMO) "DEMO leída desde el servidor." else "Detalle leído desde el servidor.") }
+                update { copy(destination=AppDestination.RESULT,review=review,localSaved=true,working=false,message=if(pending) "Copia local: esta revisión todavía no está enviada." else if(review.source==ReviewSource.DEMO) "Ejemplo leído desde el servidor." else "Detalle leído desde el servidor.") }
             } catch(e:Exception) {
                 try { val local=reviews.localReview(checkId); update { copy(destination=AppDestination.RESULT,review=local,localSaved=true,working=false,message="Sin conexión con el servidor. Estás viendo la copia guardada en tu teléfono.") } }
                 catch(_:Exception) { update { copy(working=false,message="No se pudo abrir el detalle remoto ni encontrar una copia local.") } }
@@ -190,7 +203,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun exportCurrent() {
         val id=_state.value.review?.checkId ?: return
         viewModelScope.launch {
-            try { val json=reviews.exportJson(id); update { copy(exportJson=json,message="Exportación JSON lista para compartir.") } }
+            try { val json=reviews.exportJson(id); update { copy(exportJson=json,message="El archivo de esta revisión está listo para compartir.") } }
             catch(e:Exception) { update { copy(message=e.message) } }
         }
     }
@@ -224,7 +237,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 server.start()
                 refreshHoneypotSessions(id)
             } catch (_:Exception) {
-                update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.ERROR,message="No se pudo registrar la sesión en la API local.")) }
+                update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.ERROR,message="No se pudo preparar la sesión con el servidor. Comprueba la conexión y que esta instalación esté habilitada.")) }
             }
         }
     }

@@ -61,8 +61,8 @@ class AssetDemoReviewRepository(context: Context) : ReviewRepository {
     private fun read(file: String): JSONObject = appContext.assets.open(file).bufferedReader().use { JSONObject(it.readText()) }
 
     private fun titleFor(kind: SignalKind) = when (kind) {
-        SignalKind.WIFI_SECURITY -> "Seguridad Wi-Fi"
-        SignalKind.CAPTIVE_PORTAL -> "Portal cautivo"
+        SignalKind.WIFI_SECURITY -> "Tipo de seguridad Wi-Fi"
+        SignalKind.CAPTIVE_PORTAL -> "Acceso a la red"
         SignalKind.DNS -> "Resolución DNS"
         SignalKind.HTTPS -> "Conexión HTTPS"
     }
@@ -75,8 +75,8 @@ class AssetDemoReviewRepository(context: Context) : ReviewRepository {
     }
 
     private fun explanationFor(kind: SignalKind, outcome: SignalOutcome, reason: String): String = when (reason) {
-        "OS_SECURITY_REPORTED" -> "Android informó el tipo de seguridad en este escenario sintético."
-        "OS_PORTAL_NOT_DETECTED" -> "Android no reportó un portal cautivo en este escenario."
+        "OS_SECURITY_REPORTED" -> "Android reportó el tipo de cifrado en este ejemplo. HoneyPhone solo lo consulta."
+        "OS_PORTAL_NOT_DETECTED" -> "Android no detectó que la red de ejemplo requiera una página de inicio de sesión."
         "DNS_MISMATCH" -> "El resultado DNS de ejemplo no coincide con la referencia sintética. Esto no confirma la causa ni un ataque."
         "DNS_MATCH" -> "La respuesta coincide con la referencia de este escenario sintético."
         "TLS_VALID" -> "El ejemplo muestra una conexión TLS válida al destino configurado."

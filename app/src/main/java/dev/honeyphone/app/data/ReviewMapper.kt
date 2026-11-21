@@ -25,15 +25,15 @@ object ReviewMapper {
     }
 
     private fun title(kind: SignalKind) = when(kind) {
-        SignalKind.WIFI_SECURITY -> "Seguridad Wi-Fi"
-        SignalKind.CAPTIVE_PORTAL -> "Portal cautivo"
+        SignalKind.WIFI_SECURITY -> "Tipo de seguridad Wi-Fi"
+        SignalKind.CAPTIVE_PORTAL -> "Acceso a la red"
         SignalKind.DNS -> "Resolución DNS"
         SignalKind.HTTPS -> "Conexión HTTPS"
     }
     private fun label(outcome: SignalOutcome) = when(outcome) {
         SignalOutcome.PASS -> "Disponible"
         SignalOutcome.ATTENTION -> "Revisar indicador"
-        SignalOutcome.UNKNOWN -> "Pendiente"
+        SignalOutcome.UNKNOWN -> "Sin resultado"
         SignalOutcome.NOT_APPLICABLE -> "No aplica"
     }
     private fun summary(v: ReviewVerdict) = when(v) {
@@ -42,20 +42,20 @@ object ReviewMapper {
         ReviewVerdict.INCOMPLETE -> "Algunas comprobaciones están pendientes o no disponibles."
     }
     private fun explain(code: String, e: JSONObject) = when(code) {
-        "OS_SECURITY_REPORTED" -> "Android informó un tipo de seguridad para la conexión Wi-Fi actual."
+        "OS_SECURITY_REPORTED" -> "Android informó el tipo de cifrado de esta red. HoneyPhone solo lo consulta; no modifica la protección del router."
         "OPEN_NETWORK" -> "Android informó que esta red Wi-Fi está abierta."
         "LEGACY_SECURITY" -> "Android informó un tipo de seguridad heredado."
-        "OS_PORTAL_NOT_DETECTED" -> "Android no marcó la red activa como portal cautivo."
-        "PORTAL_DETECTED" -> "Android marcó la red activa como portal cautivo. Completa el acceso desde los ajustes del sistema."
+        "OS_PORTAL_NOT_DETECTED" -> "Android no detectó que esta red requiera una página de inicio de sesión."
+        "PORTAL_DETECTED" -> "Android detectó que la red requiere una página de acceso. Completa el inicio de sesión desde los ajustes del sistema."
         "NO_WIFI" -> "No hay una conexión Wi-Fi activa disponible para esta lectura."
-        "NOT_CONFIGURED" -> "Prueba pendiente de configuración del dominio y destino controlado."
-        "DNS_MATCH" -> "La respuesta TXT recibida por el DNS de esta Wi-Fi coincide con la referencia DoH y el valor esperado del proyecto."
-        "DNS_MISMATCH" -> "La respuesta TXT de esta Wi-Fi difiere de la referencia verificada. Es una discrepancia; no confirma su causa ni un ataque."
-        "REFERENCE_UNAVAILABLE" -> "No pudimos validar la referencia DoH. No se emite una conclusión sobre el DNS de esta Wi-Fi."
-        "TLS_VALID" -> "Se completó una conexión HTTPS al destino del proyecto con la validación normal de certificados y nombre de servidor."
-        "TLS_INVALID" -> "Falló la validación o negociación TLS con el destino controlado. Esto no confirma un ataque."
-        "TIMEOUT" -> "La prueba alcanzó su tiempo límite; no hay una conclusión disponible."
-        "NETWORK_ERROR" -> "No se pudo completar la prueba por un error de conexión."
+        "NOT_CONFIGURED" -> "Esta comprobación todavía no está preparada. El equipo del proyecto debe elegir un sitio de prueba y definir qué respuesta esperar. No indica un problema de tu Wi-Fi."
+        "DNS_MATCH" -> "La respuesta para el nombre de prueba coincide con la referencia independiente configurada por el proyecto."
+        "DNS_MISMATCH" -> "La respuesta para el nombre de prueba no coincide con la referencia del proyecto. Es una diferencia para revisar, no una prueba de ataque."
+        "REFERENCE_UNAVAILABLE" -> "No se pudo consultar el servidor de referencia. Por eso no hay un resultado para la resolución de nombres."
+        "TLS_VALID" -> "El sitio de prueba presentó un certificado válido para su nombre y se pudo establecer una conexión segura."
+        "TLS_INVALID" -> "No se pudo validar el certificado o establecer la conexión segura con el sitio de prueba. Esto no confirma un ataque."
+        "TIMEOUT" -> "La comprobación tardó más de lo permitido. Inténtalo de nuevo cuando la conexión sea estable."
+        "NETWORK_ERROR" -> "No se pudo completar la comprobación por un problema de conexión."
         "NETWORK_CHANGED" -> "La red activa cambió durante la lectura; los datos se descartaron."
         "PERMISSION_DENIED" -> "Android no permitió leer este indicador."
         else -> "Android no proporcionó este campo. No se guardan SSID, BSSID ni ubicación."

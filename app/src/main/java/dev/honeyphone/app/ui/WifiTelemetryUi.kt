@@ -22,7 +22,7 @@ internal fun WifiTelemetryPanel(metrics:WifiMetrics?,label:String?) {
     Surface(shape=RoundedCornerShape(24.dp),color=HoneyStyle.Surface.copy(alpha=0.9f),
         border=BorderStroke(1.dp,HoneyStyle.Line),contentColor=HoneyStyle.Ink) {
         Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("DATOS DE LA CONEXIÓN",style=MaterialTheme.typography.labelMedium,color=HoneyStyle.Lime)
+            Text("Datos de la conexión",style=MaterialTheme.typography.labelMedium,color=HoneyStyle.Lime)
             if(label!=null) {
                 Text(label,style=MaterialTheme.typography.titleLarge)
                 Text("Etiqueta manual de esta prueba",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
@@ -30,15 +30,15 @@ internal fun WifiTelemetryPanel(metrics:WifiMetrics?,label:String?) {
             if(metrics==null) {
                 Text("Este registro no contiene métricas Wi-Fi. Las revisiones antiguas o sin Wi-Fi no las incluyen.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             } else {
-                Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     MetricTile("Señal",metrics.rssiDbm?.let{it.toString()+" dBm"},"Potencia recibida",Modifier.weight(1f))
                     MetricTile("Banda",metrics.band,metrics.frequencyMhz?.let{it.toString()+" MHz"} ?: "Frecuencia no disponible",Modifier.weight(1f))
                 }
-                Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    MetricTile("Recepción / Rx",metrics.rxLinkSpeedMbps?.let{it.toString()+" Mbps"},"Enlace con el router",Modifier.weight(1f))
-                    MetricTile("Transmisión / Tx",metrics.txLinkSpeedMbps?.let{it.toString()+" Mbps"},"Enlace con el router",Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    MetricTile("Recibido",metrics.rxLinkSpeedMbps?.let{it.toString()+" Mbps"},"Velocidad del enlace con el router",Modifier.weight(1f))
+                    MetricTile("Enviado",metrics.txLinkSpeedMbps?.let{it.toString()+" Mbps"},"Velocidad del enlace con el router",Modifier.weight(1f))
                 }
-                Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     MetricTile("Canal",metrics.channel?.toString(),"Derivado de frecuencia",Modifier.weight(1f))
                     MetricTile("Enlace",metrics.linkSpeedMbps?.let{it.toString()+" Mbps"},"Valor reportado",Modifier.weight(1f))
                 }
@@ -85,13 +85,13 @@ internal fun HistoryComparison(items:List<ReviewHistoryItem>,filter:String?) {
     Surface(shape=RoundedCornerShape(24.dp),color=HoneyStyle.Surface.copy(alpha=0.85f),
         border=BorderStroke(1.dp,HoneyStyle.Line),contentColor=HoneyStyle.Ink) {
         Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("EVOLUCIÓN DE LA SEÑAL",style=MaterialTheme.typography.labelMedium,color=HoneyStyle.Lime)
-            Text("Solo lecturas reales / LIVE",style=MaterialTheme.typography.titleMedium)
+            Text("Evolución de la señal",style=MaterialTheme.typography.labelMedium,color=HoneyStyle.Lime)
+            Text("Solo lecturas reales",style=MaterialTheme.typography.titleMedium)
             Text(if(filter==null)"Se muestran todas las etiquetas; pueden ser conexiones distintas. Filtra una etiqueta manual para acotar la comparación."
                 else "Etiqueta manual: "+filter.ifBlank{"sin etiqueta"}+". La app no verifica que sea la misma red.",
                 style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             if(live.isEmpty()) {
-                Text("Aún no hay lecturas LIVE con potencia de señal para comparar. Conecta Wi-Fi y guarda una revisión.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                Text("Aún no hay lecturas reales con potencia de señal para comparar. Conecta Wi-Fi y guarda una revisión.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             } else {
                 SignalChart(live)
                 Text("Últimas "+live.size+" lecturas con señal · orden cronológico por revisión",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
@@ -102,7 +102,7 @@ internal fun HistoryComparison(items:List<ReviewHistoryItem>,filter:String?) {
                     Text("Cambio: "+(if(delta>0)"+" else "")+delta+" dB",style=MaterialTheme.typography.titleLarge,color=HoneyStyle.Lime)
                     Text(when {delta>0->"Mayor potencia recibida que en la lectura anterior.";delta<0->"Menor potencia recibida que en la lectura anterior.";else->"La potencia recibida no cambió."},
                         style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         CompareReading("Anterior",prior,Modifier.weight(1f))
                         CompareReading("Reciente",recent,Modifier.weight(1f))
                     }
@@ -121,8 +121,8 @@ private fun CompareReading(title:String,item:ReviewHistoryItem,modifier:Modifier
         Text(DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(item.createdAt)),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
         Text(m.rssiDbm.toString()+" dBm",style=MaterialTheme.typography.titleMedium)
         Text((m.band ?: "Banda sin dato")+" · canal "+(m.channel?.toString() ?: "—"),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-        Text("Rx "+(m.rxLinkSpeedMbps?.let{it.toString()+" Mbps"} ?: "sin dato"),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-        Text("Tx "+(m.txLinkSpeedMbps?.let{it.toString()+" Mbps"} ?: "sin dato"),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        Text("Recibido "+(m.rxLinkSpeedMbps?.let{it.toString()+" Mbps"} ?: "sin dato"),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        Text("Enviado "+(m.txLinkSpeedMbps?.let{it.toString()+" Mbps"} ?: "sin dato"),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
     }
 }
 
