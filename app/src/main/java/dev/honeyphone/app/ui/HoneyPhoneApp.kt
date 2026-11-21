@@ -19,6 +19,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -45,6 +53,7 @@ import java.io.File
 import java.text.DateFormat
 import java.time.Instant
 import java.util.Date
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +84,17 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
     BackHandler(enabled=canGoBack) { viewModel.goBack() }
     Box(Modifier.fillMaxSize()) {
         TechBackground()
+        if (!state.authenticated) {
+            AccountGate(
+                busy=state.authBusy,
+                message=state.authMessage,
+                apiConfigured=dev.honeyphone.app.BuildConfig.API_BASE_URL.startsWith("https://") ||
+                    (dev.honeyphone.app.BuildConfig.DEBUG && dev.honeyphone.app.BuildConfig.API_BASE_URL.startsWith("http://127.0.0.1")),
+                googleConfigured=dev.honeyphone.app.BuildConfig.GOOGLE_SERVER_CLIENT_ID.isNotBlank(),
+                onSubmit=viewModel::authenticate,
+                onGoogleToken=viewModel::authenticateWithGoogle,
+            )
+        } else {
         Scaffold(
             containerColor=Color.Transparent, contentColor=HoneyStyle.Ink,
             topBar={
@@ -91,6 +111,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                         }
                     },
                     actions={
+                        IconButton(onClick=viewModel::signOut) { Icon(Icons.Default.Logout,contentDescription="Cerrar sesión",tint=HoneyStyle.Muted) }
                         IconButton(onClick={productTourStep=0;showProductTour=true}) { Icon(Icons.Default.Info,contentDescription="Recorrido de HoneyPhone",tint=HoneyStyle.Muted) }
                         Spacer(Modifier.width(8.dp))
                     },
@@ -153,7 +174,8 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                 } }
             }
         }
-        if(showProductTour) ModalBottomSheet(onDismissRequest={
+        }
+        if(showProductTour && state.authenticated) ModalBottomSheet(onDismissRequest={
             showProductTour=false
             context.getSharedPreferences("honeyphone_ui",Context.MODE_PRIVATE).edit().putBoolean("product_tour_completed",true).apply()
         },containerColor=HoneyStyle.Surface) {
@@ -168,6 +190,84 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                 modifier=Modifier.navigationBarsPadding(),
             )
         }
+    }
+}
+
+@Composable
+private fun AccountGate(
+    busy:Boolean,
+    message:String?,
+    apiConfigured:Boolean,
+    googleConfigured:Boolean,
+    onSubmit:(String,String,Boolean)->Unit,
+    onGoogleToken:(String)->Unit,
+) {
+    val context= LocalContext.current
+    val scope= rememberCoroutineScope()
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var createAccount by rememberSaveable { mutableStateOf(false) }
+    var googleMessage by remember { mutableStateOf<String?>(null) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=24.dp, vertical=30.dp),
+        verticalArrangement=Arrangement.Center,
+        horizontalAlignment=Alignment.CenterHorizontally,
+    ) {
+        Image(painterResource(R.drawable.ic_honeyphone),contentDescription=null,modifier=Modifier.size(74.dp))
+        Spacer(Modifier.height(18.dp))
+        Text("HoneyPhone",style=MaterialTheme.typography.headlineLarge)
+        Spacer(Modifier.height(8.dp))
+        Text(if(createAccount) "Crea tu cuenta privada" else "Inicia sesión en tu cuenta",style=MaterialTheme.typography.titleMedium,color=HoneyStyle.Muted)
+        Spacer(Modifier.height(28.dp))
+        Glass(accent=HoneyStyle.Line) {
+            OutlinedTextField(email,{email=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
+                label={Text("Correo electrónico")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),enabled=!busy)
+            OutlinedTextField(password,{password=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
+                label={Text("Contraseña")},visualTransformation=PasswordVisualTransformation(),
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),enabled=!busy)
+            if(createAccount) Text("Usa al menos 10 caracteres. Tus revisiones y sesiones quedarán asociadas a esta cuenta.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            if(!apiConfigured) Text("La dirección HTTPS de la API todavía no está configurada en esta compilación.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
+            if(!message.isNullOrBlank()) Text(message,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
+            if(!googleMessage.isNullOrBlank()) Text(googleMessage!!,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
+            PrimaryAction(if(createAccount) "Crear cuenta" else "Iniciar sesión",enabled=!busy&&apiConfigured&&email.contains("@")&&password.length>=10) {
+                onSubmit(email,password,createAccount)
+            }
+            TextButton(onClick={createAccount=!createAccount;googleMessage=null},enabled=!busy,modifier=Modifier.fillMaxWidth()) {
+                Text(if(createAccount) "Ya tengo una cuenta" else "Crear una cuenta nueva",color=HoneyStyle.Ink)
+            }
+            HorizontalDivider(color=HoneyStyle.Line)
+            OutlinedButton(
+                onClick={
+                    googleMessage=null
+                    scope.launch {
+                        try {
+                            val option=GetGoogleIdOption.Builder()
+                                .setFilterByAuthorizedAccounts(false)
+                                .setServerClientId(dev.honeyphone.app.BuildConfig.GOOGLE_SERVER_CLIENT_ID)
+                                .setAutoSelectEnabled(false)
+                                .build()
+                            val request=GetCredentialRequest.Builder().addCredentialOption(option).build()
+                            val result=CredentialManager.create(context).getCredential(context,request)
+                            val credential=result.credential as? CustomCredential
+                                ?: throw IllegalStateException("Google no devolvió una credencial compatible.")
+                            if(credential.type!=GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) throw IllegalStateException("Google no devolvió un token de acceso.")
+                            onGoogleToken(GoogleIdTokenCredential.createFrom(credential.data).idToken)
+                        } catch(e:Exception) {
+                            googleMessage=e.localizedMessage?.take(160) ?: "No se pudo iniciar sesión con Google."
+                        }
+                    }
+                },
+                enabled=!busy&&apiConfigured&&googleConfigured,
+                modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),
+                shape=RoundedCornerShape(16.dp),
+                border=BorderStroke(1.dp,HoneyStyle.Line),
+                colors=ButtonDefaults.outlinedButtonColors(contentColor=HoneyStyle.Ink),
+            ) { Text("Continuar con Google") }
+            if(!googleConfigured) Text("Google requiere configurar el cliente OAuth de tipo Web.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            if(busy) LinearProgressIndicator(Modifier.fillMaxWidth(),color=HoneyStyle.Lime)
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("Al continuar, HoneyPhone guarda tus datos bajo tu cuenta.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
     }
 }
 

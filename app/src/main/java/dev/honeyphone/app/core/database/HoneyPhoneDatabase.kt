@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import dev.honeyphone.app.core.auth.SecureSessionStore
 
 @Database(entities = [ReviewEntity::class, SignalEntity::class, OutboxEntity::class, HoneypotEventEntity::class], version = 5, exportSchema = true)
 abstract class HoneyPhoneDatabase : RoomDatabase() {
@@ -38,8 +39,45 @@ abstract class HoneyPhoneDatabase : RoomDatabase() {
             }
         }
         @Volatile private var instance: HoneyPhoneDatabase? = null
-        fun get(context: Context): HoneyPhoneDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, HoneyPhoneDatabase::class.java, "honeyphone.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+        @Volatile private var instanceName: String? = null
+
+        fun bindAccount(context: Context, userId: String) = synchronized(this) {
+            val appContext=context.applicationContext
+            val session=SecureSessionStore(appContext)
+            val previous=session.accountId()
+            if(previous==userId) return@synchronized
+            instance?.close(); instance=null; instanceName=null
+            if(previous==null && !session.hasEverBoundAccount()) {
+                val legacy=appContext.getDatabasePath("honeyphone.db")
+                val target=appContext.getDatabasePath(databaseName(userId))
+                val localPrefs=appContext.getSharedPreferences("honeyphone_local", Context.MODE_PRIVATE)
+                localPrefs.getString("installation_id", null)?.let { legacyId ->
+                    localPrefs.edit().putString("installation_id_$userId", legacyId).remove("installation_id").apply()
+                }
+                if(legacy.exists() && !target.exists()) {
+                    target.parentFile?.mkdirs()
+                    legacy.renameTo(target)
+                    listOf("-wal","-shm").forEach { suffix ->
+                        val old=appContext.getDatabasePath("honeyphone.db$suffix")
+                        if(old.exists()) old.renameTo(appContext.getDatabasePath("${databaseName(userId)}$suffix"))
+                    }
+                }
+            }
+            session.saveAccountId(userId)
         }
+
+        fun get(context: Context): HoneyPhoneDatabase = synchronized(this) {
+            val appContext=context.applicationContext
+            val name=SecureSessionStore(appContext).accountId()?.let(::databaseName) ?: "honeyphone.db"
+            if(instance==null || instanceName!=name) {
+                instance?.close()
+                instance=Room.databaseBuilder(appContext, HoneyPhoneDatabase::class.java, name)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+                instanceName=name
+            }
+            requireNotNull(instance)
+        }
+
+        private fun databaseName(userId: String) = "honeyphone_${userId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.db"
     }
 }

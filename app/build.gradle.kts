@@ -28,6 +28,14 @@ require(releaseSigningValues.all { it.isNullOrBlank() } || releaseSigningConfigu
 val debugApiBaseUrl = providers.environmentVariable("HONEYPHONE_API_BASE_URL")
     .orElse("http://127.0.0.1:8081/api/v1/").get()
 val releaseApiBaseUrl = providers.environmentVariable("HONEYPHONE_API_BASE_URL").orElse("").get()
+val googleClientIdFromJson = rootProject.projectDir.parentFile.resolve("Google OAuth")
+    .listFiles()?.firstNotNullOfOrNull { file -> runCatching {
+        val root = groovy.json.JsonSlurper().parse(file) as Map<*, *>
+        (root["web"] as? Map<*, *>)?.get("client_id") as? String
+    }.getOrNull() } ?: ""
+val googleServerClientId = providers.environmentVariable("HONEYPHONE_GOOGLE_WEB_CLIENT_ID")
+    .orElse(providers.gradleProperty("honeyphone.google.webClientId"))
+    .orElse(googleClientIdFromJson).get()
 
 android {
     namespace = "dev.honeyphone.app"
@@ -41,6 +49,7 @@ android {
         versionName = "0.4.0"
         listOf("PROBE_DNS_NAME", "PROBE_EXPECTED_TXT", "PROBE_DOH_URL", "PROBE_HTTPS_URL", "PROBE_CONFIG_VERSION").forEach { key -> buildConfigField("String", key, probeLiteral(key)) }
         buildConfigField("String", "API_BASE_URL", "\"\"")
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", buildConfigLiteral(googleServerClientId))
     }
 
     buildFeatures { compose = true; buildConfig = true }
@@ -82,6 +91,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("androidx.core:core:1.17.0")
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1") {
+        // googleid 1.1.1 declares Kotlin 1.8 compatibility shims that are obsolete
+        // with the Kotlin stdlib already supplied by this project.
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    }
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     kapt("androidx.room:room-compiler:2.8.5")

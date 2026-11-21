@@ -16,6 +16,7 @@ object HoneyStyle {
     val Lime = Color(0xFFFFFFFF)
     val Aqua = Color(0xFFD0D3D6)
     val Amber = Color(0xFFF5B700)
+    val Warning = Color(0xFFFFD166)
     val Line = Color(0xFF242830)
     val Mono = FontFamily(
         Font(R.font.jetbrains_mono_variable, FontWeight.Normal),

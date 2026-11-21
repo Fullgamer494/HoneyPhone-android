@@ -1,6 +1,8 @@
 package dev.honeyphone.app.core.network
 
+import android.content.Context
 import dev.honeyphone.app.BuildConfig
+import dev.honeyphone.app.core.auth.SecureSessionStore
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
@@ -11,12 +13,17 @@ import java.nio.charset.StandardCharsets
 
 class ApiFailure(val status: Int, val code: String, message: String) : IOException(message)
 
-class NetworkApi {
+class NetworkApi(context: Context) {
     private val base = BuildConfig.API_BASE_URL
+    private val sessionStore = SecureSessionStore(context.applicationContext)
     private val connectTimeout = 5000
     private val readTimeout = 8000
 
     fun post(payload: CheckPayload): JSONObject = request("POST", "network-checks", payload.json())
+    fun registerAccount(email: String, password: String): JSONObject = request("POST", "auth/register", JSONObject().put("email", email).put("password", password).toString(), authenticated = false)
+    fun login(email: String, password: String): JSONObject = request("POST", "auth/login", JSONObject().put("email", email).put("password", password).toString(), authenticated = false)
+    fun googleLogin(idToken: String): JSONObject = request("POST", "auth/google", JSONObject().put("id_token", idToken).toString(), authenticated = false)
+    fun account(): JSONObject = request("GET", "auth/me")
     fun health(): JSONObject {
         val healthUrl=base.substringBefore("api/v1/")+"healthz"
         val connection=(URL(healthUrl).openConnection() as HttpURLConnection).apply {
@@ -58,12 +65,13 @@ class NetworkApi {
     fun listHoneypotEvents(sessionId: String): JSONObject = request("GET", "honeypot/sessions/$sessionId/events?limit=50")
     fun postHoneypotEvents(sessionId: String, events: JSONArray): JSONObject = request("POST", "honeypot/sessions/$sessionId/events", JSONObject().put("events", events).toString())
 
-    private fun request(method: String, path: String, body: String? = null): JSONObject {
+    private fun request(method: String, path: String, body: String? = null, authenticated: Boolean = true): JSONObject {
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = this@NetworkApi.connectTimeout
             readTimeout = this@NetworkApi.readTimeout
             setRequestProperty("Accept", "application/json")
+            if (authenticated) sessionStore.accessToken()?.let { setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")

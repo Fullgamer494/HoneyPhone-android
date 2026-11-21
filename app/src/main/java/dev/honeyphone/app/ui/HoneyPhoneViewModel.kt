@@ -11,6 +11,9 @@ import androidx.lifecycle.viewModelScope
 import dev.honeyphone.app.data.AssetDemoReviewRepository
 import dev.honeyphone.app.data.HoneypotEventRepository
 import dev.honeyphone.app.data.RoomReviewRepository
+import dev.honeyphone.app.core.auth.SecureSessionStore
+import dev.honeyphone.app.core.network.NetworkApi
+import dev.honeyphone.app.core.database.HoneyPhoneDatabase
 import dev.honeyphone.app.core.honeypot.HoneypotBackgroundService
 import dev.honeyphone.app.core.honeypot.HoneypotRuntime
 import dev.honeyphone.app.model.AppDestination
@@ -38,14 +41,19 @@ import java.util.UUID
 import dev.honeyphone.app.model.HoneypotSessionInfo
 import dev.honeyphone.app.model.HoneypotRemoteEvent
 import dev.honeyphone.app.model.ApiConnectionState
+import dev.honeyphone.app.BuildConfig
 
 class HoneyPhoneViewModel(application: Application) : AndroidViewModel(application) {
     private val demoRepository = AssetDemoReviewRepository(application)
     private val reviews = RoomReviewRepository(application)
     private val honeypotEvents = HoneypotEventRepository(application)
-    private val _state = MutableStateFlow(HoneyPhoneUiState(scenarios = demoRepository.scenarios()))
+    private val sessionStore = SecureSessionStore(application)
+    private val accountApi = NetworkApi(application)
+    private val _state = MutableStateFlow(HoneyPhoneUiState(scenarios = demoRepository.scenarios(), authBusy = sessionStore.accessToken() != null))
     val state: StateFlow<HoneyPhoneUiState> = _state.asStateFlow()
     private var captureJob: Job? = null
+    private var localReviewJob: Job? = null
+    private var localHoneypotJob: Job? = null
     private var resultParent = AppDestination.HOME
     private var galleryParent = AppDestination.HOME
     private val connectivityManager = application.getSystemService(ConnectivityManager::class.java)
@@ -69,9 +77,16 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     init {
         refreshWifiAvailability()
         runCatching { connectivityManager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),networkCallback) }
-        refreshApiStatus()
-        refreshHoneypotSessions()
+        if (sessionStore.accessToken() != null) restoreSession()
         viewModelScope.launch {
+            HoneypotRuntime.status.collect { status -> update { copy(honeypotStatus=status) } }
+        }
+    }
+
+    private fun observeAccountData() {
+        localReviewJob?.cancel()
+        localHoneypotJob?.cancel()
+        localReviewJob=viewModelScope.launch {
             reviews.recoverInterruptedSyncs()
             reviews.observeReviews().collect { rows ->
                 val items = rows.map { row ->
@@ -83,13 +98,97 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 _state.value = _state.value.copy(history=items)
             }
+            }
         }
-        viewModelScope.launch {
+        localHoneypotJob=viewModelScope.launch {
             honeypotEvents.observeRecent().collect { events -> update { copy(honeypotEvents=events) } }
         }
+    }
+
+    private fun restoreSession() {
         viewModelScope.launch {
-            HoneypotRuntime.status.collect { status -> update { copy(honeypotStatus=status) } }
+            try {
+                val account = withContext(Dispatchers.IO) { accountApi.account() }
+                withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),account.getString("user_id")) }
+                observeAccountData()
+                val email = account.optString("email").takeIf(String::isNotBlank)
+                update { copy(authenticated=true,accountEmail=email,authMessage=null) }
+                withContext(Dispatchers.IO) { reviews.registerDevice() }
+                refreshApiStatus()
+                refreshHoneypotSessions()
+            } catch (e: Exception) {
+                if ((e as? dev.honeyphone.app.core.network.ApiFailure)?.status == 401) sessionStore.clear()
+                if (sessionStore.accessToken() != null && (e as? dev.honeyphone.app.core.network.ApiFailure)?.status != 401) {
+                    sessionStore.accountId()?.let { id -> withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),id) }; observeAccountData() }
+                    update { copy(authenticated=true,accountEmail=null,authMessage="Sin conexión con el servidor. Tus datos locales siguen disponibles.") }
+                } else {
+                    update { copy(authenticated=false,accountEmail=null,authMessage="La sesión venció. Inicia sesión de nuevo.") }
+                }
+            }
         }
+    }
+
+    fun authenticate(email:String,password:String,createAccount:Boolean) {
+        viewModelScope.launch {
+            update { copy(authBusy=true,authMessage=null) }
+            try {
+                val result=withContext(Dispatchers.IO) {
+                    if(createAccount) accountApi.registerAccount(email.trim(),password) else accountApi.login(email.trim(),password)
+                }
+                sessionStore.saveAccessToken(result.getString("access_token"))
+                val account=result.getJSONObject("user")
+                withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),account.getString("user_id")) }
+                observeAccountData()
+                update { copy(authenticated=true,authBusy=false,accountEmail=account.optString("email"),authMessage=null) }
+                runCatching { withContext(Dispatchers.IO) { reviews.registerDevice() } }
+                refreshApiStatus()
+                refreshHoneypotSessions()
+            } catch (e:Exception) {
+                val token=sessionStore.accessToken()
+                val message=(e as? dev.honeyphone.app.core.network.ApiFailure)?.message
+                    ?: if(BuildConfig.API_BASE_URL.isBlank()) "La app no tiene configurada la dirección segura de la API."
+                    else "No se pudo conectar o crear la cuenta. Revisa tu conexión e inténtalo de nuevo."
+                if(token != null && (e as? dev.honeyphone.app.core.network.ApiFailure)?.status != 401) {
+                    update { copy(authenticated=true,authBusy=false,authMessage="Acceso guardado. Sin conexión temporal con el servidor.") }
+                    return@launch
+                }
+                sessionStore.clear()
+                update { copy(authBusy=false,authenticated=false,accountEmail=null,authMessage=message) }
+            }
+        }
+    }
+
+    fun authenticateWithGoogle(idToken:String) {
+        viewModelScope.launch {
+            update { copy(authBusy=true,authMessage=null) }
+            try {
+                val result=withContext(Dispatchers.IO) { accountApi.googleLogin(idToken) }
+                sessionStore.saveAccessToken(result.getString("access_token"))
+                val account=result.getJSONObject("user")
+                withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),account.getString("user_id")) }
+                observeAccountData()
+                update { copy(authenticated=true,authBusy=false,accountEmail=account.optString("email"),authMessage=null) }
+                runCatching { withContext(Dispatchers.IO) { reviews.registerDevice() } }
+                refreshApiStatus()
+                refreshHoneypotSessions()
+            } catch (e:Exception) {
+                val token=sessionStore.accessToken()
+                val message=(e as? dev.honeyphone.app.core.network.ApiFailure)?.message
+                    ?: "No se pudo completar el acceso con Google. Inténtalo de nuevo."
+                if(token != null && (e as? dev.honeyphone.app.core.network.ApiFailure)?.status != 401) {
+                    update { copy(authenticated=true,authBusy=false,authMessage="Acceso guardado. Sin conexión temporal con el servidor.") }
+                    return@launch
+                }
+                sessionStore.clear()
+                update { copy(authBusy=false,authenticated=false,accountEmail=null,authMessage=message) }
+            }
+        }
+    }
+
+    fun signOut() {
+        sessionStore.clear()
+        localReviewJob?.cancel(); localHoneypotJob?.cancel()
+        update { copy(authenticated=false,accountEmail=null,authMessage=null,history=emptyList(),honeypotEvents=emptyList(),honeypotSessions=emptyList(),remoteHoneypotEvents=emptyList(),selectedHoneypotSessionId=null,apiConnection=ApiConnectionState.OFFLINE) }
     }
 
     private fun refreshWifiAvailability(): Boolean {

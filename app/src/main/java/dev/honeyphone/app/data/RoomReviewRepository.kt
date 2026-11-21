@@ -3,6 +3,7 @@ import android.content.Context
 import android.os.Build
 import dev.honeyphone.app.BuildConfig
 import dev.honeyphone.app.core.database.HoneyPhoneDatabase
+import dev.honeyphone.app.core.auth.SecureSessionStore
 import dev.honeyphone.app.core.network.AndroidSignalReader
 import dev.honeyphone.app.core.network.ApiFailure
 import dev.honeyphone.app.core.network.CheckPayload
@@ -20,15 +21,17 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 class RoomReviewRepository(private val context: Context) {
-    private val dao = HoneyPhoneDatabase.get(context).reviewDao()
-    private val api = NetworkApi()
+    private val dao get() = HoneyPhoneDatabase.get(context).reviewDao()
+    private val api = NetworkApi(context)
     private val syncMutex = Mutex()
     fun observeReviews() = dao.observeAll()
     suspend fun recoverInterruptedSyncs() = withContext(Dispatchers.IO) { dao.recoverInterruptedSyncs() }
     suspend fun checkApiHealth() = withContext(Dispatchers.IO) { api.health() }
     fun installationId(): String {
         val prefs = context.getSharedPreferences("honeyphone_local", Context.MODE_PRIVATE)
-        return prefs.getString("installation_id", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("installation_id", it).apply() }
+        val accountId = SecureSessionStore(context).accountId()
+        val key = accountId?.let { "installation_id_$it" } ?: "installation_id"
+        return prefs.getString(key, null) ?: UUID.randomUUID().toString().also { prefs.edit().putString(key, it).apply() }
     }
     suspend fun registerDevice(): org.json.JSONObject = withContext(Dispatchers.IO) { api.registerDevice(installationId(), BuildConfig.VERSION_NAME) }
     suspend fun listDevices(): List<DeviceInfo> = withContext(Dispatchers.IO) {

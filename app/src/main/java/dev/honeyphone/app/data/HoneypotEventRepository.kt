@@ -12,8 +12,9 @@ import org.json.JSONObject
 import java.net.InetAddress
 import java.time.Instant
 
-class HoneypotEventRepository(context: Context) {
-    private val dao = HoneyPhoneDatabase.get(context).honeypotDao()
+class HoneypotEventRepository(private val context: Context) {
+    private val dao get() = HoneyPhoneDatabase.get(context).honeypotDao()
+    private val api = NetworkApi(context)
 
     fun observeRecent(): Flow<List<HoneypotEvent>> = dao.observeRecent().map { rows ->
         rows.map { it.toModel() }
@@ -26,7 +27,6 @@ class HoneypotEventRepository(context: Context) {
     }
 
     suspend fun syncPending() {
-        val api=NetworkApi()
         dao.pendingUpload().groupBy { it.sessionId!! }.forEach { (sessionId, rows) ->
             val payload=JSONArray()
             rows.forEach { row -> payload.put(JSONObject().put("event_id",row.id)

@@ -1,5 +1,21 @@
 # HoneyPhone Android
 
+## Cuentas y servidor
+
+La app requiere una cuenta para abrir sus datos. Puedes crearla con correo y contraseña o continuar con Google. La sesión se conserva cifrada con una clave de Android Keystore, y cada cuenta usa un archivo Room separado; al iniciar sesión por primera vez se conserva la base local anterior dentro de esa cuenta. Los dispositivos, revisiones y sesiones remotas viajan con el token Bearer de esa cuenta.
+
+El build de desarrollo usa `http://127.0.0.1:8081/api/v1/`; para un teléfono/emulador, reenvía ese puerto al API local con `adb reverse tcp:8081 tcp:8000`. El build release exige HTTPS. Configúralo con:
+
+```bash
+export HONEYPHONE_API_BASE_URL='https://honeyphone-api.myuspot.org/api/v1/'
+export HONEYPHONE_GOOGLE_WEB_CLIENT_ID='tu-cliente-oauth-web.apps.googleusercontent.com'
+./gradlew :app:assembleRelease
+```
+
+El ID de OAuth es público y no es el `client_secret`. Si el build se ejecuta desde el workspace completo, Gradle también puede leer solo el `client_id` del JSON OAuth de tipo Web en `../Google OAuth/`. Nunca incluyas el JSON ni el secreto de cliente en el APK o el repositorio.
+
+La API debe tener `AUTH_SECRET_KEY` aleatorio y `GOOGLE_CLIENT_IDS` con el mismo ID OAuth Web. La verificación de correo y la recuperación de contraseña todavía dependen de la integración de correo transaccional y no están incluidas en este flujo.
+
 App nativa Compose Material 3, applicationId dev.honeyphone.app, versión 0.4.0. Requiere minSdk 29, compileSdk 37, targetSdk 36, JDK 21 y SDK Android API 37.
 
 ## Compilar
