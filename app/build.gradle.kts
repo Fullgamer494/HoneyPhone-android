@@ -25,6 +25,8 @@ val releaseSigningConfigured = releaseSigningValues.all { !it.isNullOrBlank() }
 require(releaseSigningValues.all { it.isNullOrBlank() } || releaseSigningConfigured) {
     "Configure all HONEYPHONE_RELEASE_* signing variables or leave them all unset."
 }
+val debugApiBaseUrl = providers.environmentVariable("HONEYPHONE_API_BASE_URL")
+    .orElse("http://127.0.0.1:8081/api/v1/").get()
 val releaseApiBaseUrl = providers.environmentVariable("HONEYPHONE_API_BASE_URL").orElse("").get()
 
 android {
@@ -57,7 +59,7 @@ android {
         }
     }
     buildTypes {
-        debug { buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8081/api/v1/\"") }
+        debug { buildConfigField("String", "API_BASE_URL", buildConfigLiteral(debugApiBaseUrl)) }
         release {
             buildConfigField("String", "API_BASE_URL", buildConfigLiteral(releaseApiBaseUrl))
             if (releaseSigningConfigured) signingConfig = signingConfigs.getByName("release")
