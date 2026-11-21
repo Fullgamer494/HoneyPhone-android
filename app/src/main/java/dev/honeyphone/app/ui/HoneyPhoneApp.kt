@@ -125,10 +125,15 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                     AppDestination.HOME -> HomeScreen(state.networkLabelDraft,state.history,state.review,viewModel::setNetworkLabel,viewModel::openLivePreview,viewModel::openDemoGallery,viewModel::openHistoryReview,viewModel::syncCurrent,viewModel::exportCurrent,state.message)
                     AppDestination.LIVE_REVIEW -> LiveScreen(state.working,state.message,viewModel::cancelReview)
                     AppDestination.DEMO_GALLERY -> DemoScreen(state.scenarios,viewModel::openDemo)
-                    AppDestination.RESULT -> state.review?.let {
-                        ResultScreen(it,state.localSaved,state.working,state.message,
-                            state.history.find { row->row.checkId==it.checkId }?.syncStatus ?: "pending",
-                            viewModel::openDetail,viewModel::saveDemo,viewModel::syncCurrent,viewModel::exportCurrent,viewModel::deleteCurrent)
+                    AppDestination.RESULT -> {
+                        state.review?.let {
+                            ResultScreen(it,state.localSaved,state.working,state.message,
+                                state.history.find { row->row.checkId==it.checkId }?.syncStatus ?: "pending",
+                                viewModel::openDetail,viewModel::saveDemo,viewModel::syncCurrent,viewModel::exportCurrent,viewModel::deleteCurrent)
+                        }
+                        state.selectedSignal?.let { signal -> ModalBottomSheet(onDismissRequest={viewModel.goBack()},containerColor=HoneyStyle.Surface) {
+                            SignalDetailsSheet(signal,Modifier.navigationBarsPadding())
+                        } }
                     }
                     AppDestination.DETAIL -> {
                         state.review?.let { review ->
@@ -246,10 +251,10 @@ private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:Revie
                 }
             }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                MetricChip("Recibido",metrics?.rxLinkSpeedMbps?.let { "$it Mbps" } ?: "—",Modifier.weight(1f))
-                MetricChip("Enviado",metrics?.txLinkSpeedMbps?.let { "$it Mbps" } ?: metrics?.linkSpeedMbps?.let { "$it Mbps" } ?: "—",Modifier.weight(1f))
-                MetricChip("Internet",when(metrics?.internetValidated){true->"Disponible";false->"Sin validar";null->"Sin dato"},Modifier.weight(1.2f))
+                MetricChip("Velocidad de recepción",metrics?.rxLinkSpeedMbps?.let { "$it Mbps" } ?: "Sin dato",Modifier.weight(1f))
+                MetricChip("Velocidad de envío",metrics?.txLinkSpeedMbps?.let { "$it Mbps" } ?: metrics?.linkSpeedMbps?.let { "$it Mbps" } ?: "Sin dato",Modifier.weight(1f))
             }
+            MetricChip("Acceso a Internet",when(metrics?.internetValidated){true->"Disponible";false->"Sin validar";null->"Aún sin revisar"},Modifier.fillMaxWidth())
             OutlinedTextField(value=label,onValueChange=onLabel,modifier=Modifier.fillMaxWidth(),singleLine=true,
                 label={Text("Etiqueta opcional")},placeholder={Text("Ej. Sala A")},isError=!validManualLabel(label))
             PrimaryAction("Escanear red",enabled=validManualLabel(label),onClick=onLive)

@@ -56,6 +56,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun goBack() {
+        if (_state.value.selectedSignal != null) { update { copy(selectedSignal=null) }; return }
         if (_state.value.destination == AppDestination.LIVE_REVIEW) { cancelReview(); return }
         update { copy(destination=when(destination) {
             AppDestination.DETAIL -> AppDestination.RESULT
@@ -172,7 +173,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         val review=demoRepository.loadDemo(checkId)
         update { copy(destination=AppDestination.RESULT, review=review,localSaved=false, selectedSignal=null, message="Datos de demostración. No son una lectura del teléfono.") }
     }
-    fun openDetail(signal: SignalPresentation) = update { copy(destination=AppDestination.DETAIL, selectedSignal=signal) }
+    fun openDetail(signal: SignalPresentation) = update { copy(selectedSignal=signal) }
 
     fun saveDemo() {
         val current=_state.value.review ?: return
