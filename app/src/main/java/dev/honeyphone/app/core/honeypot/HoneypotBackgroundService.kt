@@ -7,6 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -35,6 +39,8 @@ class HoneypotBackgroundService : Service() {
     private var profile = HoneypotProfile.LOGIN_PORTAL
     private var sessionId = ""
     private var startedAt = ""
+    private var wifiMonitor: ConnectivityManager.NetworkCallback? = null
+    private var stopping = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -84,11 +90,13 @@ class HoneypotBackgroundService : Service() {
         )
         listener = server
         server.start()
+        monitorActiveNetwork()
         scope.launch { openRemoteSession() }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        unregisterNetworkMonitor()
         listener?.stop()
         listener = null
         scope.cancel()
@@ -112,7 +120,10 @@ class HoneypotBackgroundService : Service() {
     }
 
     private fun stopListener(finalState: String) {
+        if (stopping) return
+        stopping = true
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ACTIVE, false).apply()
+        unregisterNetworkMonitor()
         listener?.stop()
         listener = null
         HoneypotRuntime.update(HoneypotStatus(profile = profile))
@@ -121,6 +132,29 @@ class HoneypotBackgroundService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun monitorActiveNetwork() {
+        val manager=getSystemService(ConnectivityManager::class.java)
+        val callback=object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if(!networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !hasWifiNetwork()) stopListener("INTERRUPTED")
+            }
+            override fun onLost(network: Network) { if(!hasWifiNetwork()) stopListener("INTERRUPTED") }
+        }
+        wifiMonitor=callback
+        runCatching { manager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),callback) }
+            .onFailure { stopListener("INTERRUPTED") }
+    }
+
+    private fun hasWifiNetwork():Boolean = getSystemService(ConnectivityManager::class.java).allNetworks.any {
+        getSystemService(ConnectivityManager::class.java).getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
+    }
+
+    private fun unregisterNetworkMonitor() {
+        val callback=wifiMonitor ?: return
+        wifiMonitor=null
+        runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback) }
     }
 
     private suspend fun persistSession(finalState: String) = sessionMutex.withLock {

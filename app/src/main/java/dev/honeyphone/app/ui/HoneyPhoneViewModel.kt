@@ -2,6 +2,10 @@
 package dev.honeyphone.app.ui
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.honeyphone.app.data.AssetDemoReviewRepository
@@ -29,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.net.Inet4Address
 import java.util.UUID
 import dev.honeyphone.app.model.HoneypotSessionInfo
 import dev.honeyphone.app.model.HoneypotRemoteEvent
@@ -43,6 +48,12 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     private var captureJob: Job? = null
     private var resultParent = AppDestination.HOME
     private var galleryParent = AppDestination.HOME
+    private val connectivityManager = application.getSystemService(ConnectivityManager::class.java)
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { refreshWifiAvailability() }
+        override fun onLost(network: Network) { refreshWifiAvailability() }
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) { refreshWifiAvailability() }
+    }
 
     fun goBack() {
         if (_state.value.destination == AppDestination.LIVE_REVIEW) { cancelReview(); return }
@@ -55,6 +66,8 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     init {
+        refreshWifiAvailability()
+        runCatching { connectivityManager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),networkCallback) }
         refreshApiStatus()
         refreshHoneypotSessions()
         viewModelScope.launch {
@@ -76,6 +89,15 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             HoneypotRuntime.status.collect { status -> update { copy(honeypotStatus=status) } }
         }
+    }
+
+    private fun refreshWifiAvailability(): Boolean {
+        val available=connectivityManager.allNetworks.any { network ->
+            connectivityManager.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true &&
+                connectivityManager.getLinkProperties(network)?.linkAddresses?.any { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isLinkLocalAddress }==true
+        }
+        update { copy(wifiConnected=available) }
+        return available
     }
 
     fun refreshApiStatus() {
@@ -216,6 +238,10 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun startHoneypot() {
         if (_state.value.honeypotStatus.phase in setOf(HoneypotPhase.STARTING, HoneypotPhase.LISTENING)) return
         val profile=_state.value.selectedHoneypotProfile
+        if(!refreshWifiAvailability()) {
+            HoneypotRuntime.update(HoneypotStatus(HoneypotPhase.ERROR,message="Conecta este teléfono a una red Wi‑Fi antes de activar el señuelo.",profile=profile))
+            return
+        }
         val id=UUID.randomUUID().toString()
         val startedAt=Instant.now().toString()
         update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.STARTING,profile=profile),message=null) }
@@ -234,6 +260,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     override fun onCleared() {
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         super.onCleared()
     }
 

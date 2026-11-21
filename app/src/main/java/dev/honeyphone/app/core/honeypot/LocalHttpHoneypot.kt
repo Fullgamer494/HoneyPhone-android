@@ -125,15 +125,14 @@ class LocalHttpHoneypot(
 
     private fun activeWifiAddress(): InetAddress {
         val manager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = manager.activeNetwork ?: throw IllegalStateException("Conéctate a una Wi-Fi para iniciar el señuelo.")
-        val capabilities = manager.getNetworkCapabilities(network)
-        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) != true) {
-            throw IllegalStateException("Conéctate a una Wi-Fi para iniciar el señuelo.")
+        val wifiNetworks=manager.allNetworks.filter { network ->
+            manager.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
         }
-        return manager.getLinkProperties(network)?.linkAddresses
-            ?.map { it.address }
-            ?.filterIsInstance<Inet4Address>()
-            ?.firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
+        if(wifiNetworks.isEmpty()) throw IllegalStateException("Conéctate a una Wi-Fi para iniciar el señuelo.")
+        return wifiNetworks.asSequence().flatMap { network ->
+            manager.getLinkProperties(network)?.linkAddresses.orEmpty().asSequence().map { it.address }
+        }.filterIsInstance<Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
             ?: throw IllegalStateException("Android no informó una dirección IPv4 para esta Wi-Fi.")
     }
 

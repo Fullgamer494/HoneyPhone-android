@@ -20,6 +20,7 @@ class HoneypotEventRepository(context: Context) {
     }
 
     suspend fun record(event: HoneypotEvent) {
+        if (event.method.isBlank() || !event.path.startsWith('/') || event.sourceAddress.isBlank()) return
         dao.insert(event.toEntity())
         dao.retainLatestHundred()
     }

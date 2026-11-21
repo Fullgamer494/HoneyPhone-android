@@ -68,6 +68,7 @@ data class HoneyPhoneUiState(
     val localSaved: Boolean = false,
     val networkLabelDraft: String = "",
     val honeypotStatus: HoneypotStatus = HoneypotStatus(),
+    val wifiConnected: Boolean = false,
     val selectedHoneypotProfile: HoneypotProfile = HoneypotProfile.LOGIN_PORTAL,
     val honeypotEvents: List<HoneypotEvent> = emptyList(),
     val devices: List<DeviceInfo> = emptyList(),
