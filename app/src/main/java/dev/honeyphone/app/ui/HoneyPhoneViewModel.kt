@@ -12,6 +12,7 @@ import dev.honeyphone.app.model.AppDestination
 import dev.honeyphone.app.model.HoneyPhoneUiState
 import dev.honeyphone.app.model.HoneypotPhase
 import dev.honeyphone.app.model.HoneypotStatus
+import dev.honeyphone.app.model.HoneypotProfile
 import dev.honeyphone.app.model.ReviewHistoryItem
 import dev.honeyphone.app.model.ReviewSource
 import dev.honeyphone.app.model.SignalPresentation
@@ -209,9 +210,15 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
     fun clearMessage() = update { copy(message=null,exportJson=null) }
 
+    fun selectHoneypotProfile(profile:HoneypotProfile) {
+        if(_state.value.honeypotStatus.phase in setOf(HoneypotPhase.STARTING,HoneypotPhase.LISTENING)) return
+        update { copy(selectedHoneypotProfile=profile,honeypotStatus=honeypotStatus.copy(profile=profile)) }
+    }
+
     fun startHoneypot() {
         if (_state.value.honeypotStatus.phase in setOf(HoneypotPhase.STARTING, HoneypotPhase.LISTENING)) return
-        update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.STARTING),message=null) }
+        val profile=_state.value.selectedHoneypotProfile
+        update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.STARTING,profile=profile),message=null) }
         viewModelScope.launch {
             val id=UUID.randomUUID().toString()
             val startedAt=Instant.now().toString()
@@ -225,19 +232,20 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 honeypotSessionStartedAt=startedAt
                 val server = LocalHttpHoneypot(getApplication(),
                     onStatus = { status ->
-                        update { copy(honeypotStatus=status) }
+                        update { copy(honeypotStatus=status.copy(profile=profile)) }
                         if(status.phase==HoneypotPhase.ERROR) closeHoneypotSession("INTERRUPTED")
                     },
                     onEvent = { event -> viewModelScope.launch(Dispatchers.IO) {
                         honeypotEvents.record(event.copy(sessionId=id))
                         honeypotEvents.syncPending()
                     } },
+                    profile = profile,
                 )
                 honeypotServer=server
                 server.start()
                 refreshHoneypotSessions(id)
             } catch (_:Exception) {
-                update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.ERROR,message="No se pudo preparar la sesión con el servidor. Comprueba la conexión y que esta instalación esté habilitada.")) }
+                update { copy(honeypotStatus=HoneypotStatus(HoneypotPhase.ERROR,message="No se pudo preparar la sesión con el servidor. Comprueba la conexión y que esta instalación esté habilitada.",profile=profile)) }
             }
         }
     }
@@ -245,7 +253,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun stopHoneypot() {
         honeypotServer?.stop()
         honeypotServer = null
-        update { copy(honeypotStatus=HoneypotStatus()) }
+        update { copy(honeypotStatus=HoneypotStatus(profile=_state.value.selectedHoneypotProfile)) }
         closeHoneypotSession("STOPPED")
     }
 

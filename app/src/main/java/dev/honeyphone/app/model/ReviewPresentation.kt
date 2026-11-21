@@ -6,6 +6,9 @@ enum class SignalOutcome { PASS, ATTENTION, UNKNOWN, NOT_APPLICABLE }
 enum class ReviewVerdict { NO_DISCREPANCIES, ATTENTION_REQUIRED, INCOMPLETE }
 enum class AppDestination { HOME, LIVE_REVIEW, DEMO_GALLERY, RESULT, DETAIL, HISTORY, HONEYPOT, SETTINGS }
 enum class HoneypotPhase { STOPPED, STARTING, LISTENING, ERROR }
+enum class HoneypotProfile(val entryPath: String) {
+    LOGIN_PORTAL("/"), ADMIN_CONSOLE("/admin"), COMPROMISED_SITE("/")
+}
 enum class ApiConnectionState { CHECKING, ONLINE, OFFLINE }
 
 data class HoneypotStatus(
@@ -14,6 +17,7 @@ data class HoneypotStatus(
     val message: String? = null,
     val serviceName: String? = null,
     val serviceDiscoveryReady: Boolean? = null,
+    val profile: HoneypotProfile = HoneypotProfile.LOGIN_PORTAL,
 )
 
 data class HoneypotEvent(
@@ -63,6 +67,7 @@ data class HoneyPhoneUiState(
     val localSaved: Boolean = false,
     val networkLabelDraft: String = "",
     val honeypotStatus: HoneypotStatus = HoneypotStatus(),
+    val selectedHoneypotProfile: HoneypotProfile = HoneypotProfile.LOGIN_PORTAL,
     val honeypotEvents: List<HoneypotEvent> = emptyList(),
     val devices: List<DeviceInfo> = emptyList(),
     val deviceNameDraft: String = "",

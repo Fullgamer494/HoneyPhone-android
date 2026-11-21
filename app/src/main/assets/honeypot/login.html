@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Acceso de red</title>
+  <style>
+    :root{color-scheme:dark;--bg:#07100d;--panel:#101c17;--line:#26362e;--ink:#edf3eb;--muted:#96a79c;--lime:#d4ff33;--aqua:#35ddbd}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 0,#233a24 0,transparent 48%),linear-gradient(135deg,#07100d,#0b1712 65%,#07100d);font:15px system-ui,sans-serif;color:var(--ink)}
+    main{width:min(100%,420px);border:1px solid var(--line);border-radius:24px;padding:28px;background:linear-gradient(145deg,#122019ee,#09110eee);box-shadow:0 28px 90px #0009}
+    .brand{display:flex;align-items:center;gap:12px;margin-bottom:32px}.mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid #52623a;border-radius:12px;color:var(--lime);font:700 18px monospace;text-shadow:0 0 12px #d4ff3388}.brand small,.eyebrow{color:var(--muted);font:11px monospace;letter-spacing:.13em;text-transform:uppercase}.brand strong{display:block;font-size:16px}.eyebrow{color:var(--lime)}h1{font-size:30px;line-height:1.1;margin:10px 0}p{color:var(--muted);line-height:1.55}.field{display:grid;gap:7px;margin:18px 0}.field label{font-size:12px;color:#c3d0c5}.field input{width:100%;height:48px;border:1px solid var(--line);border-radius:10px;background:#08110d;color:var(--ink);padding:0 13px;font:14px system-ui}.field input:focus{outline:2px solid #d4ff3377;border-color:var(--lime)}button{width:100%;height:50px;margin-top:6px;border:0;border-radius:11px;background:var(--lime);color:#15200c;font-weight:700;font-size:14px}footer{display:flex;justify-content:space-between;gap:12px;margin-top:25px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font:10px monospace}
+  </style>
+</head>
+<body><main>
+  <div class="brand"><div class="mark">H</div><div><strong>HoneyPhone Network</strong><small>ACCESS NODE · 02</small></div></div>
+  <div class="eyebrow">Red local / autenticación</div>
+  <h1>Inicia sesión para continuar</h1>
+  <p>Confirma tu cuenta para consultar los recursos disponibles en esta red.</p>
+  <form id="access-form" autocomplete="off">
+    <div class="field"><label for="account">Cuenta</label><input id="account" name="account" autocomplete="off" placeholder="Nombre de usuario"></div>
+    <div class="field"><label for="access-code">Clave de acceso</label><input id="access-code" name="access-code" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+    <button type="submit">Continuar</button>
+  </form>
+  <footer><span>ESTADO: DISPONIBLE</span><span>CONEXIÓN LOCAL</span></footer>
+  <script>
+    document.getElementById('access-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector('button');
+      button.disabled = true;
+      try {
+        const response = await fetch('/login', { method: 'POST' });
+        document.open();
+        document.write(await response.text());
+        document.close();
+      } catch (_) {
+        button.disabled = false;
+        button.textContent = 'No se pudo validar · intentar de nuevo';
+      }
+    });
+  </script>
+</main></body></html>

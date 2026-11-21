@@ -11,6 +11,7 @@ import android.os.Looper
 import dev.honeyphone.app.BuildConfig
 import dev.honeyphone.app.model.HoneypotEvent
 import dev.honeyphone.app.model.HoneypotPhase
+import dev.honeyphone.app.model.HoneypotProfile
 import dev.honeyphone.app.model.HoneypotStatus
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -35,6 +36,7 @@ class LocalHttpHoneypot(
     context: Context,
     private val onStatus: (HoneypotStatus) -> Unit,
     private val onEvent: (HoneypotEvent) -> Unit,
+    private val profile: HoneypotProfile = HoneypotProfile.LOGIN_PORTAL,
 ) {
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
@@ -226,7 +228,25 @@ class LocalHttpHoneypot(
                 responseCode = status,
             ),
         )
-        writeResponse(socket, status, "No encontrado")
+        writeResponse(socket, status, renderDecoyPage(request, status))
+    }
+
+    private fun renderDecoyPage(request: ParsedRequest, status: Int): String {
+        if (status != 200) return "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>No disponible</title><body><h1>Página no disponible</h1></body></html>"
+        val asset = when {
+            request.method == "POST" && request.path == "/login" -> "honeypot/login-result.html"
+            request.path == "/login" -> "honeypot/login.html"
+            profile == HoneypotProfile.LOGIN_PORTAL -> "honeypot/login.html"
+            profile == HoneypotProfile.ADMIN_CONSOLE -> "honeypot/admin.html"
+            request.path.startsWith("/admin") -> "honeypot/admin.html"
+            profile == HoneypotProfile.COMPROMISED_SITE -> "honeypot/compromised.html"
+            else -> "honeypot/login.html"
+        }
+        return runCatching {
+            appContext.assets.open(asset).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+        }.getOrElse {
+            "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>HoneyPhone</title><body><h1>Señuelo local</h1></body></html>"
+        }
     }
 
     /** Reads at most the HTTP request line and headers; a POST body is deliberately untouched. */
@@ -266,15 +286,10 @@ class LocalHttpHoneypot(
     }
 
     private fun writeResponse(socket: Socket, status: Int, content: String) {
-        val body = """
-            <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-            <title>HoneyPhone Device Console</title><body style="font:16px sans-serif;background:#101713;color:#eaf1e8;padding:2rem">
-            <h1>Device console</h1><p>Local network management interface</p><p>Service status: ready</p>
-            <a href="/admin">Administration</a></body></html>
-        """.trimIndent().takeIf { status == 200 } ?: "<!doctype html><title>Not found</title><h1>$content</h1>"
+        val body = content
         val bodyBytes = body.toByteArray(StandardCharsets.UTF_8)
         val reason = if (status == 200) "OK" else if (status == 400) "Bad Request" else "Not Found"
-        val headers = "HTTP/1.1 $status $reason\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bodyBytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"
+        val headers = "HTTP/1.1 $status $reason\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bodyBytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'\r\n\r\n"
         socket.getOutputStream().apply {
             write(headers.toByteArray(StandardCharsets.US_ASCII))
             write(bodyBytes)

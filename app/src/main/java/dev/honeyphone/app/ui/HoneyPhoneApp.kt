@@ -133,6 +133,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                     }
                     AppDestination.HISTORY -> ActivityScreen(state.history,state.honeypotEvents,state.honeypotSessions,state.remoteHoneypotEvents,state.selectedHoneypotSessionId,state.honeypotRemoteMessage,state.working,state.message,viewModel::refreshHistory,viewModel::refreshHoneypotSessions,viewModel::clearHoneypotEvents,viewModel::openHistoryReview)
                     AppDestination.HONEYPOT -> HoneypotHomeScreen(state.honeypotStatus,state.honeypotEvents,
+                        state.selectedHoneypotProfile,viewModel::selectHoneypotProfile,
                         viewModel::startHoneypot,viewModel::stopHoneypot,viewModel::clearHoneypotEvents)
                     AppDestination.SETTINGS -> SystemScreen(state.devices,state.deviceNameDraft,state.deviceMessage,state.currentInstallationId,state.apiConnection,viewModel::setDeviceName,viewModel::saveDeviceName,viewModel::revokeDevice,viewModel::refreshDevices,viewModel::refreshApiStatus,viewModel::openDemoGallery)
                 }
@@ -637,7 +638,7 @@ private fun ProductTourSheet(step:Int,onPrevious:()->Unit,onNext:()->Unit,onFini
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,onStart:()->Unit,onStop:()->Unit,onClear:()->Unit) {
+private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,selectedProfile:HoneypotProfile,onSelectProfile:(HoneypotProfile)->Unit,onStart:()->Unit,onStop:()->Unit,onClear:()->Unit) {
     var selectedEvent by remember { mutableStateOf<HoneypotEvent?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val context=LocalContext.current
@@ -666,6 +667,17 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
         Box(Modifier.fillMaxWidth().height(210.dp),contentAlignment=Alignment.Center) {
             HoneypotFlytrap(status.phase==HoneypotPhase.LISTENING,currentEventId,size=210.dp)
         }
+        Glass {
+            Eyebrow("Escenario visual",HoneyStyle.Muted)
+            Text(honeypotProfileTitle(selectedProfile),style=MaterialTheme.typography.titleMedium)
+            Text(honeypotProfileDescription(selectedProfile),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                HoneypotProfile.entries.forEach { profile ->
+                    FilterChip(selected=selectedProfile==profile,onClick={onSelectProfile(profile)},enabled=status.phase !in setOf(HoneypotPhase.STARTING,HoneypotPhase.LISTENING),label={Text(honeypotProfileShortName(profile),maxLines=1)})
+                }
+            }
+            Text("Los formularios son ficticios. HoneyPhone registra la ruta y el intento, pero no lee ni guarda los campos escritos. Usa solo esta red de prueba o una red con autorización.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end=12.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                 Text(if(status.phase==HoneypotPhase.LISTENING)"Esperando solicitudes" else "Servidor detenido",style=MaterialTheme.typography.titleLarge,maxLines=2,overflow=TextOverflow.Ellipsis)
@@ -674,7 +686,7 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
             Text("${events.size}",fontFamily=HoneyStyle.Dots,fontSize=28.sp,color=HoneyStyle.Ink)
         }
         if(status.phase==HoneypotPhase.LISTENING && status.address!=null) {
-            val url="${status.address}/admin"
+            val url="${status.address}${status.profile.entryPath}"
             Surface(Modifier.fillMaxWidth().clickable {
                 val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("HoneyPhone URL",url))
@@ -755,6 +767,21 @@ private fun honeypotSessionLabel(state:String)=when(state.uppercase()) {
     else->"Estado desconocido"
 }
 private fun requestDescription(method:String,path:String)="${when(method.uppercase()){"GET"->"Consulta";"HEAD"->"Comprobación";"POST"->"Envío";else->"Solicitud"}} · $path"
+private fun honeypotProfileTitle(profile:HoneypotProfile)=when(profile) {
+    HoneypotProfile.LOGIN_PORTAL->"Inicio de sesión"
+    HoneypotProfile.ADMIN_CONSOLE->"Consola de administración"
+    HoneypotProfile.COMPROMISED_SITE->"Sitio intervenido"
+}
+private fun honeypotProfileShortName(profile:HoneypotProfile)=when(profile) {
+    HoneypotProfile.LOGIN_PORTAL->"Acceso"
+    HoneypotProfile.ADMIN_CONSOLE->"Consola"
+    HoneypotProfile.COMPROMISED_SITE->"Intervenido"
+}
+private fun honeypotProfileDescription(profile:HoneypotProfile)=when(profile) {
+    HoneypotProfile.LOGIN_PORTAL->"Muestra un formulario de acceso ficticio. Al enviarlo se registra el intento en /login; los campos no se leen ni se guardan."
+    HoneypotProfile.ADMIN_CONSOLE->"Presenta un panel con datos inventados y enlaces señuelo para registrar qué secciones intenta abrir el visitante."
+    HoneypotProfile.COMPROMISED_SITE->"Muestra una página ficticia que parece intervenida. Registra la visita y el acceso a la ruta del panel."
+}
 private fun userAgentLabel(value:String)=when(value.uppercase()) {
     "BROWSER"->"Navegador"
     "SCANNER"->"Herramienta de análisis"
