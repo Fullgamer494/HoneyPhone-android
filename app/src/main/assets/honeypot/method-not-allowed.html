@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Método no admitido · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Control de método</small></div></div><span class="tag">HTTP 405</span></header>
+    <section class="hero"><div class="eyebrow">Método no admitido</div><h1>Operación rechazada</h1><p class="lead">La ruta no acepta este método. El nodo conserva el intento y publica los métodos permitidos.</p></section>
+    <section class="panel"><div class="button-grid">
+      <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Leer estado</strong><span>GET · 200</span></button>
+      <button class="flow-button" data-request data-method="OPTIONS" data-path="/api/status"><strong>Ver métodos</strong><span>OPTIONS · 204</span></button>
+      <button class="flow-button" data-request data-method="POST" data-path="/api/support"><strong>Enviar consulta</strong><span>POST · 202</span></button>
+      <button class="flow-button" data-request data-method="DELETE" data-path="/api/session"><strong>Revocar sesión</strong><span>DELETE · 204</span></button>
+    </div><div class="request-output" data-request-output aria-live="polite">Métodos aceptados: GET, HEAD, POST, PUT, PATCH, DELETE y OPTIONS.</div></section>
+    <footer class="footer"><span>HONEYPHONE · RESPUESTA DE MÉTODO</span><span>SIN NAVEGACIÓN ENTRE VISTAS</span></footer>
+  </main>
+</body>
+</html>

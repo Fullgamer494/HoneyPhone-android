@@ -78,6 +78,19 @@ abstract class HoneyPhoneDatabase : RoomDatabase() {
             requireNotNull(instance)
         }
 
+        fun deleteAccountData(context: Context, userId: String) = synchronized(this) {
+            val appContext=context.applicationContext
+            val name=databaseName(userId)
+            if(instanceName==name) {
+                instance?.close()
+                instance=null
+                instanceName=null
+            }
+            appContext.deleteDatabase(name)
+            appContext.getSharedPreferences("honeyphone_local", Context.MODE_PRIVATE)
+                .edit().remove("installation_id_$userId").apply()
+        }
+
         private fun databaseName(userId: String) = "honeyphone_${userId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.db"
     }
 }

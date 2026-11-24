@@ -1,7 +1,7 @@
-# Copiar a probe.properties solo al disponer de destinos controlados.
+# Destinos controlados publicados para la release de producción.
 # TXT fijo, referencia RFC8484 DoH con TLS válido y HTTPS 2xx sin redirección.
-PROBE_DNS_NAME=
-PROBE_EXPECTED_TXT=
-PROBE_DOH_URL=
-PROBE_HTTPS_URL=
-PROBE_CONFIG_VERSION=
+PROBE_DNS_NAME=honeyphone-test.myuspot.org
+PROBE_EXPECTED_TXT=hp-dns-check-v1-7f3c91
+PROBE_DOH_URL=https://cloudflare-dns.com/dns-query
+PROBE_HTTPS_URL=https://honeyphone-api.myuspot.org/healthz
+PROBE_CONFIG_VERSION=2026-11-22-v1

@@ -25,6 +25,9 @@ interface ReviewDao {
     @Query("SELECT * FROM outbox WHERE status IN ('pending','failed') ORDER BY createdAt")
     suspend fun pending(): List<OutboxEntity>
 
+    @Query("SELECT * FROM outbox WHERE checkId IN (:ids) AND status IN ('pending','failed') ORDER BY createdAt")
+    suspend fun pending(ids: List<String>): List<OutboxEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertReview(review: ReviewEntity)
 
@@ -51,6 +54,9 @@ interface ReviewDao {
 
     @Query("DELETE FROM reviews WHERE checkId = :id")
     suspend fun deleteReview(id: String): Int
+
+    @Query("DELETE FROM reviews WHERE checkId IN (:ids) AND checkId IN (SELECT checkId FROM outbox WHERE status IN ('pending','failed'))")
+    suspend fun deletePendingReviews(ids: List<String>): Int
 
     @Transaction
     suspend fun saveLocal(review: ReviewEntity, signals: List<SignalEntity>, outbox: OutboxEntity) {

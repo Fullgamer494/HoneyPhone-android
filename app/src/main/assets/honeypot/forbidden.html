@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Acceso restringido · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Control de acceso</small></div></div><span class="tag tag-warning">HTTP 403</span></header>
+    <section class="hero"><div class="eyebrow">Política del nodo</div><h1>Acceso restringido</h1><p class="lead">Este recurso requiere autorización de operación. El nodo no entregó contenido sensible.</p></section>
+    <section class="panel"><div class="alert"><strong>Solicitud registrada</strong><p>HoneyPhone conserva la ruta permitida, el método y el código HTTP. No lee el cuerpo.</p></div>
+      <div class="button-grid">
+        <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar estado público</strong><span>GET · 200</span></button>
+        <button class="flow-button" data-request data-method="OPTIONS" data-path="/api/status"><strong>Ver métodos disponibles</strong><span>OPTIONS · 204</span></button>
+        <button class="flow-button" data-request data-method="PATCH" data-path="/api/settings"><strong>Probar actualización</strong><span>PATCH · 200</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/missing"><strong>Consultar ruta no listada</strong><span>GET · 404</span></button>
+      </div>
+      <div class="request-output" data-request-output aria-live="polite">No se proporcionó información privada.</div>
+    </section>
+    <footer class="footer"><span>HONEYPHONE · ACCESO RESTRINGIDO</span><span>CONTENIDO PROTEGIDO</span></footer>
+  </main>
+</body>
+</html>

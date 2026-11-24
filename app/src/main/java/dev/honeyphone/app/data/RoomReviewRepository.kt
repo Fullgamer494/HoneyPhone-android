@@ -3,6 +3,7 @@ import android.content.Context
 import android.os.Build
 import dev.honeyphone.app.BuildConfig
 import dev.honeyphone.app.core.database.HoneyPhoneDatabase
+import dev.honeyphone.app.core.database.OutboxEntity
 import dev.honeyphone.app.core.auth.SecureSessionStore
 import dev.honeyphone.app.core.network.AndroidSignalReader
 import dev.honeyphone.app.core.network.ApiFailure
@@ -20,6 +21,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
+data class PendingReviewSyncReport(
+    val attempted: Int,
+    val sent: Int,
+    val pending: Int,
+    val inProgress: Int,
+    val failureMessage: String?,
+)
 class RoomReviewRepository(private val context: Context) {
     private val dao get() = HoneyPhoneDatabase.get(context).reviewDao()
     private val api = NetworkApi(context)
@@ -52,10 +60,11 @@ class RoomReviewRepository(private val context: Context) {
     suspend fun saveHoneypotSession(session: org.json.JSONObject): org.json.JSONObject = withContext(Dispatchers.IO) { api.upsertHoneypotSession(session) }
     suspend fun honeypotSessions(): org.json.JSONObject = withContext(Dispatchers.IO) { api.listHoneypotSessions(installationId()) }
     suspend fun honeypotEvents(sessionId:String): org.json.JSONObject = withContext(Dispatchers.IO) { api.listHoneypotEvents(sessionId) }
-    suspend fun captureAndSave(label: String?): ReviewPresentation = withContext(Dispatchers.IO) {
+    suspend fun captureAndSave(label: String?,requireValidatedInternet:Boolean=false): ReviewPresentation = withContext(Dispatchers.IO) {
         val started = Instant.now().toString()
-        val reading = AndroidSignalReader(context).read()
-        val payload = CheckPayload(CheckPayload.freshId(), installationId(), "LIVE", BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, started, Instant.now().toString(), if(reading.networkChanged) "CANCELLED" else "COMPLETED", reading.signals, label, reading.metrics)
+        val reading = AndroidSignalReader(context).read(requireValidatedInternet)
+        if(reading.networkChanged) throw dev.honeyphone.app.core.network.NoWifiConnectionException("La red Wi‑Fi cambió durante el escaneo. No se guardó una lectura incompleta.")
+        val payload = CheckPayload(CheckPayload.freshId(), installationId(), "LIVE", BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, started, Instant.now().toString(), "COMPLETED", reading.signals, label, reading.metrics)
         currentCoroutineContext().ensureActive()
         dao.saveLocal(payload.reviewEntity(), payload.signalEntities(), payload.outboxEntity())
         ReviewMapper.toPresentation(dao.get(payload.checkId)!!, dao.signals(payload.checkId))
@@ -90,7 +99,7 @@ class RoomReviewRepository(private val context: Context) {
             } catch (e: ApiFailure) {
                 dao.setStatus(id, "failed", e.message)
                 if (e.status == 409) "El servidor ya tiene otra versión de esta revisión. Conservamos tu copia local para que puedas revisarla."
-                else "No se pudo enviar la revisión. Sigue guardada en el teléfono y puedes volver a intentarlo."
+                else "La API respondió ${e.status}: ${e.message ?: "No se pudo guardar la revisión."}"
             } catch (e: Exception) {
                 dao.setStatus(id, "failed", e.message ?: "Servidor no disponible")
                 "Guardada en tu teléfono. No pudimos conectar con el servidor; puedes reintentar más tarde."
@@ -98,7 +107,33 @@ class RoomReviewRepository(private val context: Context) {
         }
     }
     suspend fun syncPendingOutbox() = withContext(Dispatchers.IO) {
-        dao.pending().forEach { item -> runCatching { sync(item.checkId) } }
+        sendAllPending()
+    }
+    suspend fun sendAllPending(): PendingReviewSyncReport = withContext(Dispatchers.IO) {
+        sendQueued(dao.pending())
+    }
+    suspend fun sendPendingReviews(checkIds: List<String>): PendingReviewSyncReport = withContext(Dispatchers.IO) {
+        if (checkIds.isEmpty()) return@withContext syncReport(emptyList(),0)
+        sendQueued(dao.pending(checkIds.distinct()))
+    }
+    private suspend fun sendQueued(queued: List<OutboxEntity>): PendingReviewSyncReport {
+        queued.forEach { item -> runCatching { sync(item.checkId) } }
+        return syncReport(queued.mapNotNull { dao.outbox(it.checkId) },queued.size)
+    }
+    private fun syncReport(outboxes: List<OutboxEntity>,attempted:Int): PendingReviewSyncReport {
+        val states = outboxes.map { it.status }
+        return PendingReviewSyncReport(
+            attempted = attempted,
+            sent = states.count { it == "synced" },
+            pending = states.count { it == "pending" || it == "failed" },
+            inProgress = states.count { it == "syncing" },
+            failureMessage = outboxes.asSequence().filter { it.status == "failed" }
+                .mapNotNull { it.lastError?.takeIf(String::isNotBlank) }
+                .distinct().joinToString(" · ").take(240).takeIf(String::isNotBlank),
+        )
+    }
+    suspend fun deletePendingLocalReviews(checkIds: List<String>): Int = withContext(Dispatchers.IO) {
+        if(checkIds.isEmpty()) 0 else dao.deletePendingReviews(checkIds.distinct())
     }
     suspend fun refreshRemote(): String = withContext(Dispatchers.IO) {
         val remote = api.list(installationId())

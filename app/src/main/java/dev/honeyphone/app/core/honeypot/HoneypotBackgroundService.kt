@@ -63,7 +63,10 @@ class HoneypotBackgroundService : Service() {
             .putString(KEY_SESSION_ID, sessionId).putString(KEY_STARTED_AT, startedAt).apply()
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, notification("Iniciando listener local"))
+        startForeground(
+            NOTIFICATION_ID,
+            notification(HoneypotStatus(phase = HoneypotPhase.STARTING, profile = profile)),
+        )
         val currentSessionId = sessionId
         val server = LocalHttpHoneypot(
             context = this,
@@ -108,6 +111,7 @@ class HoneypotBackgroundService : Service() {
             val reviews = RoomReviewRepository(applicationContext)
             reviews.registerDevice()
             reviews.saveHoneypotSession(sessionPayload("RUNNING", null))
+            runCatching { HoneypotEventRepository(applicationContext).syncPending() }
         } catch (exception: Exception) {
             val detail = exception.message?.takeIf(String::isNotBlank)
             val current = HoneypotRuntime.status.value
@@ -159,9 +163,10 @@ class HoneypotBackgroundService : Service() {
 
     private suspend fun persistSession(finalState: String) = sessionMutex.withLock {
         if (sessionId.isBlank()) return@withLock
-        runCatching {
+        val saved = runCatching {
             RoomReviewRepository(applicationContext).saveHoneypotSession(sessionPayload(finalState, Instant.now().toString()))
-        }
+        }.isSuccess
+        if(saved) runCatching { HoneypotEventRepository(applicationContext).syncPending() }
     }
 
     private fun sessionPayload(state: String, endedAt: String?): JSONObject = JSONObject()
@@ -174,17 +179,32 @@ class HoneypotBackgroundService : Service() {
         .put("state", state)
 
     private fun updateNotification(status: HoneypotStatus) {
-        val text = when (status.phase) {
-            HoneypotPhase.LISTENING -> status.address ?: "Listener local activo"
-            HoneypotPhase.ERROR -> status.message ?: "No se pudo iniciar"
-            HoneypotPhase.STARTING -> "Iniciando listener local"
-            HoneypotPhase.STOPPED -> "Listener detenido"
-        }
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, notification(text))
+        manager.notify(NOTIFICATION_ID, notification(status))
     }
 
-    private fun notification(content: String): Notification {
+    private fun notification(status: HoneypotStatus): Notification {
+        val address = status.address?.removePrefix("http://")?.removePrefix("https://")?.trimEnd('/')
+        val title = when (status.phase) {
+            HoneypotPhase.LISTENING -> "Señuelo activo"
+            HoneypotPhase.STARTING -> "Iniciando señuelo"
+            HoneypotPhase.ERROR -> "Señuelo requiere atención"
+            HoneypotPhase.STOPPED -> "Señuelo detenido"
+        }
+        val content = when (status.phase) {
+            HoneypotPhase.LISTENING -> address?.let { "Escuchando en $it" }
+                ?: "Escuchando en la red Wi-Fi local"
+            HoneypotPhase.STARTING -> "Preparando el listener local"
+            HoneypotPhase.ERROR -> status.message ?: "No se pudo iniciar el listener local"
+            HoneypotPhase.STOPPED -> "El listener local está detenido"
+        }
+        val expandedContent = when (status.phase) {
+            HoneypotPhase.LISTENING -> address?.let { "Escuchando en $it. Puedes detener el señuelo desde esta notificación." }
+                ?: "El señuelo está activo en esta red Wi-Fi. Puedes detenerlo desde esta notificación."
+            HoneypotPhase.STARTING -> "Preparando el señuelo en la red Wi-Fi local."
+            HoneypotPhase.ERROR -> status.message ?: "No se pudo iniciar el listener local. Abre HoneyPhone para revisar el estado."
+            HoneypotPhase.STOPPED -> "El señuelo local dejó de escuchar."
+        }
         val openIntent = PendingIntent.getActivity(
             this, 1, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -194,11 +214,18 @@ class HoneypotBackgroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("HoneyPhone · señuelo activo")
+            .setSmallIcon(R.drawable.ic_stat_honeyphone)
+            .setColor(android.graphics.Color.rgb(245, 183, 0))
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentTitle(title)
             .setContentText(content)
+            .setSubText("WI-FI LOCAL")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedContent))
             .setContentIntent(openIntent)
-            .setOngoing(true)
+            .setShowWhen(false)
+            .setOngoing(status.phase != HoneypotPhase.STOPPED)
             .setOnlyAlertOnce(true)
             .addAction(0, "Detener", stopIntent)
             .build()

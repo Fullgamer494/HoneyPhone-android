@@ -2,12 +2,15 @@
 package dev.honeyphone.app.ui
 
 import android.app.Application
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
 import dev.honeyphone.app.data.AssetDemoReviewRepository
 import dev.honeyphone.app.data.HoneypotEventRepository
 import dev.honeyphone.app.data.RoomReviewRepository
@@ -16,6 +19,7 @@ import dev.honeyphone.app.core.network.NetworkApi
 import dev.honeyphone.app.core.database.HoneyPhoneDatabase
 import dev.honeyphone.app.core.honeypot.HoneypotBackgroundService
 import dev.honeyphone.app.core.honeypot.HoneypotRuntime
+import dev.honeyphone.app.core.work.PeriodicReviewScheduler
 import dev.honeyphone.app.model.AppDestination
 import dev.honeyphone.app.model.HoneyPhoneUiState
 import dev.honeyphone.app.model.HoneypotPhase
@@ -35,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.net.Inet4Address
 import java.util.UUID
@@ -48,12 +53,18 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     private val reviews = RoomReviewRepository(application)
     private val honeypotEvents = HoneypotEventRepository(application)
     private val sessionStore = SecureSessionStore(application)
+    private val initialAccessToken = sessionStore.accessToken()
     private val accountApi = NetworkApi(application)
-    private val _state = MutableStateFlow(HoneyPhoneUiState(scenarios = demoRepository.scenarios(), authBusy = sessionStore.accessToken() != null))
+    private val _state = MutableStateFlow(HoneyPhoneUiState(
+        scenarios = demoRepository.scenarios(),
+        authBusy = initialAccessToken != null,
+        automaticWifiScansEnabled = PeriodicReviewScheduler.isEnabled(application),
+    ))
     val state: StateFlow<HoneyPhoneUiState> = _state.asStateFlow()
     private var captureJob: Job? = null
     private var localReviewJob: Job? = null
     private var localHoneypotJob: Job? = null
+    private var sessionRestoreJob: Job? = null
     private var resultParent = AppDestination.HOME
     private var galleryParent = AppDestination.HOME
     private val connectivityManager = application.getSystemService(ConnectivityManager::class.java)
@@ -61,6 +72,14 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         override fun onAvailable(network: Network) { refreshWifiAvailability() }
         override fun onLost(network: Network) { refreshWifiAvailability() }
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) { refreshWifiAvailability() }
+    }
+
+    private fun clearCredentialProviderState() {
+        viewModelScope.launch {
+            runCatching {
+                CredentialManager.create(getApplication()).clearCredentialState(ClearCredentialStateRequest())
+            }
+        }
     }
 
     fun goBack() {
@@ -77,7 +96,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     init {
         refreshWifiAvailability()
         runCatching { connectivityManager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),networkCallback) }
-        if (sessionStore.accessToken() != null) restoreSession()
+        initialAccessToken?.let(::restoreSession)
         viewModelScope.launch {
             HoneypotRuntime.status.collect { status -> update { copy(honeypotStatus=status) } }
         }
@@ -104,24 +123,29 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun restoreSession() {
-        viewModelScope.launch {
+    private fun restoreSession(restoringToken: String) {
+        sessionRestoreJob = viewModelScope.launch {
             try {
                 val account = withContext(Dispatchers.IO) { accountApi.account() }
+                if (sessionStore.accessToken() != restoringToken) return@launch
                 withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),account.getString("user_id")) }
                 observeAccountData()
                 val email = account.optString("email").takeIf(String::isNotBlank)
-                update { copy(authenticated=true,accountEmail=email,authMessage=null) }
+                update { copy(authenticated=true,authBusy=false,accountEmail=email,authMessage=null) }
                 withContext(Dispatchers.IO) { reviews.registerDevice() }
                 refreshApiStatus()
                 refreshHoneypotSessions()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if ((e as? dev.honeyphone.app.core.network.ApiFailure)?.status == 401) sessionStore.clear()
-                if (sessionStore.accessToken() != null && (e as? dev.honeyphone.app.core.network.ApiFailure)?.status != 401) {
+                if (sessionStore.accessToken() != restoringToken) return@launch
+                val unauthorized = (e as? dev.honeyphone.app.core.network.ApiFailure)?.status == 401
+                if (unauthorized) sessionStore.clear()
+                if (!unauthorized && sessionStore.accessToken() != null) {
                     sessionStore.accountId()?.let { id -> withContext(Dispatchers.IO) { HoneyPhoneDatabase.bindAccount(getApplication(),id) }; observeAccountData() }
-                    update { copy(authenticated=true,accountEmail=null,authMessage="Sin conexión con el servidor. Tus datos locales siguen disponibles.") }
+                    update { copy(authenticated=true,authBusy=false,accountEmail=null,authMessage="Sin conexión con el servidor. Tus datos locales siguen disponibles.") }
                 } else {
-                    update { copy(authenticated=false,accountEmail=null,authMessage="La sesión venció. Inicia sesión de nuevo.") }
+                    update { copy(authenticated=false,authBusy=false,accountEmail=null,authMessage="La sesión venció. Inicia sesión de nuevo.") }
                 }
             }
         }
@@ -133,6 +157,10 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 val result=withContext(Dispatchers.IO) {
                     if(createAccount) accountApi.registerAccount(email.trim(),password) else accountApi.login(email.trim(),password)
+                }
+                if (createAccount) {
+                    update { copy(authBusy=false,authMessage=result.optString("message").ifBlank { "Revisa tu correo para confirmar la cuenta." }) }
+                    return@launch
                 }
                 sessionStore.saveAccessToken(result.getString("access_token"))
                 val account=result.getJSONObject("user")
@@ -153,6 +181,31 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 sessionStore.clear()
                 update { copy(authBusy=false,authenticated=false,accountEmail=null,authMessage=message) }
+            }
+        }
+    }
+
+    fun resendEmailVerification(email:String) {
+        sendAccountEmailAction(email, "verification")
+    }
+
+    fun requestPasswordRecovery(email:String) {
+        sendAccountEmailAction(email, "recovery")
+    }
+
+    private fun sendAccountEmailAction(email:String, action:String) {
+        viewModelScope.launch {
+            update { copy(authBusy=true,authMessage=null) }
+            try {
+                val response=withContext(Dispatchers.IO) {
+                    if (action == "verification") accountApi.requestEmailVerification(email)
+                    else accountApi.requestPasswordReset(email)
+                }
+                update { copy(authBusy=false,authMessage=response.optString("message").ifBlank { "Si la cuenta existe, recibirás un correo con los siguientes pasos." }) }
+            } catch (e:Exception) {
+                val message=(e as? dev.honeyphone.app.core.network.ApiFailure)?.message
+                    ?: "No se pudo enviar el correo ahora. Inténtalo de nuevo más tarde."
+                update { copy(authBusy=false,authMessage=message) }
             }
         }
     }
@@ -185,9 +238,43 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun signOut() {
+        clearCredentialProviderState()
+        sessionRestoreJob?.cancel()
+        sessionRestoreJob = null
         sessionStore.clear()
         localReviewJob?.cancel(); localHoneypotJob?.cancel()
-        update { copy(authenticated=false,accountEmail=null,authMessage=null,history=emptyList(),honeypotEvents=emptyList(),honeypotSessions=emptyList(),remoteHoneypotEvents=emptyList(),selectedHoneypotSessionId=null,apiConnection=ApiConnectionState.OFFLINE) }
+        update { copy(authenticated=false,authBusy=false,accountEmail=null,authMessage=null,destination=AppDestination.HOME,activeTab=AppDestination.HOME,selectedSignal=null,history=emptyList(),honeypotEvents=emptyList(),honeypotSessions=emptyList(),remoteHoneypotEvents=emptyList(),selectedHoneypotSessionId=null,apiConnection=ApiConnectionState.OFFLINE) }
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            update { copy(accountDeleteBusy=true,accountMessage=null) }
+            val accountId=sessionStore.accountId()
+            try {
+                HoneypotBackgroundService.stop(getApplication())
+                delay(350)
+                withContext(Dispatchers.IO) { accountApi.deleteAccount() }
+                stopCapture()
+                localReviewJob?.cancel(); localHoneypotJob?.cancel()
+                getApplication<Application>().stopService(Intent(getApplication(),HoneypotBackgroundService::class.java))
+                if(accountId!=null) withContext(Dispatchers.IO) { HoneyPhoneDatabase.deleteAccountData(getApplication(),accountId) }
+                sessionStore.clear()
+                sessionStore.clearAccountId()
+                clearCredentialProviderState()
+                update {
+                    copy(authenticated=false,authBusy=false,accountDeleteBusy=false,accountEmail=null,
+                        accountMessage=null,authMessage="La cuenta y sus datos se eliminaron.",
+                        destination=AppDestination.HOME,activeTab=AppDestination.HOME,
+                        history=emptyList(),honeypotEvents=emptyList(),honeypotSessions=emptyList(),
+                        remoteHoneypotEvents=emptyList(),devices=emptyList(),selectedHoneypotSessionId=null,
+                        apiConnection=ApiConnectionState.OFFLINE,honeypotStatus=HoneypotStatus())
+                }
+            } catch(e:Exception) {
+                val message=(e as? dev.honeyphone.app.core.network.ApiFailure)?.message
+                    ?: "No se pudo eliminar la cuenta. Revisa tu conexión e inténtalo de nuevo."
+                update { copy(accountDeleteBusy=false,accountMessage=message) }
+            }
+        }
     }
 
     private fun refreshWifiAvailability(): Boolean {
@@ -206,6 +293,11 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun setAutomaticWifiScansEnabled(enabled:Boolean) {
+        PeriodicReviewScheduler.setEnabled(getApplication(),enabled)
+        update { copy(automaticWifiScansEnabled=enabled) }
+    }
+
     private fun stopCapture() {
         if(captureJob?.isActive == true) { captureJob?.cancel(); update { copy(working=false) } }
         captureJob=null
@@ -218,6 +310,7 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun refreshHoneypotSessions(selectId:String? = _state.value.selectedHoneypotSessionId) {
         viewModelScope.launch {
             try {
+                runCatching { honeypotEvents.syncPending() }
                 val page=reviews.honeypotSessions().getJSONArray("items")
                 val sessions=(0 until page.length()).map { i -> page.getJSONObject(i).let { s ->
                     HoneypotSessionInfo(s.getString("session_id"),Instant.parse(s.getString("started_at")).toEpochMilli(),if(s.isNull("ended_at"))null else Instant.parse(s.getString("ended_at")).toEpochMilli(),s.getString("state"),s.getInt("listen_port"))
@@ -230,7 +323,8 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             } catch (_:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,honeypotRemoteMessage="No se pudo consultar el historial remoto. Los eventos locales siguen disponibles.") } }
         }
     }
-    fun openSettings() { stopCapture(); update { copy(destination=AppDestination.SETTINGS, activeTab=AppDestination.SETTINGS, selectedSignal=null) }; refreshDevices() }
+    fun openSettings() = openProfile()
+    fun openProfile() { stopCapture(); update { copy(destination=AppDestination.PROFILE, activeTab=AppDestination.PROFILE, selectedSignal=null, accountMessage=null) }; refreshDevices() }
     fun refreshDevices() { viewModelScope.launch {
         try {
             val id=reviews.installationId()
@@ -250,6 +344,10 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
     fun revokeDevice() { viewModelScope.launch { try { reviews.revokeDevice(); update { copy(devices=reviews.listDevices(),deviceMessage="Dispositivo revocado. No podrá enviar comprobaciones.") } } catch (_:Exception) { update { copy(deviceMessage="No se pudo revocar el dispositivo.") } } } }
     fun openLivePreview() {
         if(_state.value.working || !validManualLabel(_state.value.networkLabelDraft)) return
+        if(!refreshWifiAvailability()) {
+            update { copy(message="Conecta el teléfono a una red Wi‑Fi antes de escanear. Los datos móviles no generan una lectura.") }
+            return
+        }
         val label=_state.value.networkLabelDraft.trim().takeIf { it.isNotEmpty() }
         resultParent = AppDestination.HOME
         update { copy(destination=AppDestination.LIVE_REVIEW, activeTab=AppDestination.HOME, working=true, message=null, selectedSignal=null) }
@@ -258,12 +356,15 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
                 val review=reviews.captureAndSave(label)
                 update { copy(destination=AppDestination.RESULT, review=review, localSaved=true, working=false, message="La revisión está guardada en tu teléfono. Puedes enviarla al servidor cuando lo decidas.") }
             } catch(e: CancellationException) { throw e }
+            catch(e: dev.honeyphone.app.core.network.NoWifiConnectionException) {
+                update { copy(destination=AppDestination.HOME,working=false,message=e.message) }
+            }
             catch(e: Exception) { update { copy(working=false, message="No se pudo completar y guardar la revisión. Puedes intentarlo otra vez.") } }
         }
     }
     fun openDemoGallery() {
         stopCapture()
-        galleryParent = if (_state.value.destination == AppDestination.SETTINGS) AppDestination.SETTINGS else AppDestination.HOME
+        galleryParent = if (_state.value.destination in setOf(AppDestination.SETTINGS,AppDestination.PROFILE)) AppDestination.PROFILE else AppDestination.HOME
         update { copy(destination=AppDestination.DEMO_GALLERY, selectedSignal=null) }
     }
     fun openDemo(checkId: String) {
@@ -296,6 +397,38 @@ class HoneyPhoneViewModel(application: Application) : AndroidViewModel(applicati
             update { copy(working=true,message=null) }
             try { val message=reviews.refreshRemote(); update { copy(apiConnection=ApiConnectionState.ONLINE,working=false,message=message) } }
             catch(e:Exception) { update { copy(apiConnection=ApiConnectionState.OFFLINE,working=false,message="No pudimos conectar con el servidor. Tus revisiones guardadas siguen disponibles.") } }
+        }
+    }
+    fun syncPendingReviews(checkIds: List<String>) {
+        if (_state.value.working) return
+        viewModelScope.launch {
+            update { copy(working=true,message=null) }
+            try {
+                val report = reviews.sendPendingReviews(checkIds)
+                val message = when {
+                    report.attempted == 0 -> "No hay revisiones pendientes de envío."
+                    report.pending == 0 && report.inProgress == 0 -> "Se enviaron ${report.sent} revisiones al servidor."
+                    report.sent > 0 && report.pending > 0 -> "Se enviaron ${report.sent}; ${report.pending} no se enviaron${report.failureMessage?.let { ": $it" }.orEmpty()}"
+                    report.inProgress > 0 -> "${if(report.sent>0)"Se enviaron ${report.sent}; " else ""}${report.inProgress} envíos siguen en curso. Actualiza en un momento."
+                    report.failureMessage != null -> "No se pudieron enviar ${report.pending} revisiones: ${report.failureMessage}"
+                    else -> "No se pudieron enviar las revisiones. Las copias siguen en este teléfono."
+                }
+                update { copy(working=false,message=message) }
+            } catch (e: Exception) {
+                update { copy(working=false,message="No se pudieron enviar las revisiones. Las copias siguen en este teléfono.") }
+            }
+        }
+    }
+    fun deletePendingLocalReviews(checkIds: List<String>) {
+        if (_state.value.working) return
+        viewModelScope.launch {
+            update { copy(working=true,message=null) }
+            try {
+                val count = reviews.deletePendingLocalReviews(checkIds)
+                update { copy(working=false,message=if (count == 0) "No había revisiones locales pendientes para eliminar." else "Se eliminaron $count revisiones que solo estaban en este teléfono.") }
+            } catch (e: Exception) {
+                update { copy(working=false,message="No se pudieron eliminar las revisiones locales pendientes.") }
+            }
         }
     }
     fun openHistoryReview(checkId: String) {

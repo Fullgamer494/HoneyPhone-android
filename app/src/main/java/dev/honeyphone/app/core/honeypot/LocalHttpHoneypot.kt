@@ -24,6 +24,8 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -208,15 +210,11 @@ class LocalHttpHoneypot(
     private fun handleRequest(socket: Socket) {
         socket.soTimeout = READ_TIMEOUT_MS
         val request = readHeaders(socket) ?: run {
-            writeResponse(socket, 400, "Solicitud incompleta")
+            writeResponse(socket, false, htmlResponse(400, "bad-request.html"))
             return
         }
         val peer = socket.inetAddress.hostAddress.orEmpty().take(MAX_ADDRESS_LENGTH)
-        val status = if (
-            request.path in DECOY_PATHS ||
-            request.path.startsWith("/admin/") ||
-            request.path.startsWith("/api/")
-        ) 200 else 404
+        val response = responseFor(request)
         onEvent(
             HoneypotEvent(
                 id = UUID.randomUUID().toString(),
@@ -225,29 +223,131 @@ class LocalHttpHoneypot(
                 method = request.method,
                 path = request.path,
                 userAgent = request.userAgent,
-                responseCode = status,
+                responseCode = response.status,
                 requestDetails = JSONObject(request.details).put("source_port", socket.port).toString(),
             ),
         )
-        writeResponse(socket, status, renderDecoyPage(request, status))
+        writeResponse(socket, request.method == "HEAD", response)
     }
 
-    private fun renderDecoyPage(request: ParsedRequest, status: Int): String {
-        if (status != 200) return "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>No disponible</title><body><h1>Página no disponible</h1></body></html>"
-        val asset = when {
-            request.method == "POST" && request.path == "/login" -> "honeypot/login-result.html"
-            request.path == "/login" -> "honeypot/login.html"
-            profile == HoneypotProfile.LOGIN_PORTAL -> "honeypot/login.html"
-            profile == HoneypotProfile.ADMIN_CONSOLE -> "honeypot/admin.html"
-            request.path.startsWith("/admin") -> "honeypot/admin.html"
-            profile == HoneypotProfile.COMPROMISED_SITE -> "honeypot/compromised.html"
-            else -> "honeypot/login.html"
+    private fun responseFor(request: ParsedRequest): DecoyResponse {
+        val path = request.path.removeSuffix("/").ifBlank { "/" }
+        val method = request.method
+
+        if (method == "OPTIONS") {
+            return emptyResponse(204, mapOf("Allow" to "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"))
         }
-        return runCatching {
-            appContext.assets.open(asset).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        }.getOrElse {
-            "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>HoneyPhone</title><body><h1>Señuelo local</h1></body></html>"
+        val staticAsset = STATIC_ASSETS[path]
+        if (staticAsset != null) {
+            if (method !in setOf("GET", "HEAD")) return methodNotAllowed()
+            return DecoyResponse(
+                status = 200,
+                body = readAssetBytes(staticAsset.first),
+                contentType = staticAsset.second,
+                headers = mapOf("Cache-Control" to "public, max-age=3600"),
+            )
         }
+
+        if (path in SENSITIVE_PATHS) {
+            return if (method in setOf("GET", "HEAD")) htmlResponse(403, "forbidden.html") else methodNotAllowed()
+        }
+
+        if (path == "/upgrade") {
+            if (method != "GET") return methodNotAllowed()
+            val key = request.webSocketKey ?: return emptyResponse(426, mapOf("Upgrade" to "websocket"))
+            val decodedKey = runCatching { Base64.getDecoder().decode(key) }.getOrNull()
+            if (decodedKey?.size != 16) return htmlResponse(400, "bad-request.html")
+            val accept = Base64.getEncoder().encodeToString(
+                MessageDigest.getInstance("SHA-1").digest((key + WEBSOCKET_GUID).toByteArray(StandardCharsets.US_ASCII)),
+            )
+            return emptyResponse(
+                101,
+                mapOf("Connection" to "Upgrade", "Upgrade" to "websocket", "Sec-WebSocket-Accept" to accept),
+            )
+        }
+        if (method == "GET" && path in setOf("/maintenance", "/api/maintenance")) {
+            return htmlResponse(503, "maintenance.html")
+        }
+        if (method == "GET" && path in setOf("/not-found", "/missing")) {
+            return htmlResponse(404, "not-found.html")
+        }
+        if (method == "GET" && path == "/bad-request") {
+            return htmlResponse(400, "bad-request.html")
+        }
+        if (method == "GET" && path == "/robots.txt") {
+            return textResponse(200, "User-agent: *\nDisallow: /\n", "text/plain; charset=utf-8")
+        }
+
+        if (path == "/login") {
+            return when (method) {
+                "GET", "HEAD" -> htmlResponse(200, "login.html")
+                "POST" -> htmlResponse(401, "login-result.html")
+                else -> methodNotAllowed()
+            }
+        }
+        if (path == "/admin") return pageRequest(method, "admin.html")
+        if (path == "/site") return pageRequest(method, "compromised.html")
+        if (path == "/search") return pageRequest(method, "search.html")
+        if (path == "/status") {
+            if (method !in setOf("GET", "HEAD")) return methodNotAllowed()
+            val headers = mapOf("ETag" to STATUS_ETAG, "Cache-Control" to "no-cache")
+            return if (request.matchesStatusEtag) emptyResponse(304, headers)
+            else htmlResponse(200, "status.html", headers)
+        }
+        if (path == "/") {
+            val asset = when (profile) {
+                HoneypotProfile.LOGIN_PORTAL -> "login.html"
+                HoneypotProfile.ADMIN_CONSOLE -> "admin.html"
+                HoneypotProfile.COMPROMISED_SITE -> "compromised.html"
+            }
+            return pageRequest(method, asset)
+        }
+
+        if (path == "/api/status") {
+            return if (method in setOf("GET", "HEAD")) {
+                textResponse(200, "{\"service\":\"available\",\"node\":\"honeyphone-local\"}", "application/json; charset=utf-8")
+            } else methodNotAllowed()
+        }
+        if (path == "/api/session") {
+            return when (method) {
+                "POST" -> textResponse(201, "{\"created\":true}", "application/json; charset=utf-8")
+                "DELETE" -> emptyResponse(204)
+                else -> methodNotAllowed()
+            }
+        }
+        if (path == "/api/support" || path == "/api/alerts") {
+            return if (method == "POST") textResponse(202, "{\"accepted\":true}", "application/json; charset=utf-8") else methodNotAllowed()
+        }
+        if (path == "/api/settings") {
+            return when (method) {
+                "PUT" -> emptyResponse(204)
+                "PATCH" -> textResponse(200, "{\"updated\":true}", "application/json; charset=utf-8")
+                else -> methodNotAllowed()
+            }
+        }
+
+        return if (method in setOf("GET", "HEAD")) htmlResponse(404, "not-found.html") else methodNotAllowed()
+    }
+
+    private fun pageRequest(method: String, asset: String): DecoyResponse =
+        if (method in setOf("GET", "HEAD")) htmlResponse(200, asset) else methodNotAllowed()
+
+    private fun htmlResponse(status: Int, asset: String, headers: Map<String, String> = emptyMap()) =
+        DecoyResponse(status, readAssetBytes("honeypot/$asset"), "text/html; charset=utf-8", headers)
+
+    private fun textResponse(status: Int, text: String, contentType: String, headers: Map<String, String> = emptyMap()) =
+        DecoyResponse(status, text.toByteArray(StandardCharsets.UTF_8), contentType, headers)
+
+    private fun emptyResponse(status: Int, headers: Map<String, String> = emptyMap()) =
+        DecoyResponse(status, ByteArray(0), "text/plain; charset=utf-8", headers)
+
+    private fun methodNotAllowed() = htmlResponse(405, "method-not-allowed.html", mapOf("Allow" to "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"))
+
+    private fun readAssetBytes(asset: String): ByteArray = runCatching {
+        appContext.assets.open(asset).use { it.readBytes() }
+    }.getOrElse {
+        "<!doctype html><html lang=\"es\"><meta charset=\"utf-8\"><title>HoneyPhone</title><body><h1>Señuelo local</h1></body></html>"
+            .toByteArray(StandardCharsets.UTF_8)
     }
 
     /** Reads at most the HTTP request line and headers; a POST body is deliberately untouched. */
@@ -287,6 +387,8 @@ class LocalHttpHoneypot(
         fun header(name: String, max: Int): String = headers[name].orEmpty()
             .filter { it.code in 32..126 }.take(max)
         val userAgent = header("user-agent", MAX_USER_AGENT_LENGTH)
+        val matchesStatusEtag = header("if-none-match", 120).split(',').any { it.trim() == STATUS_ETAG || it.trim() == "*" }
+        val webSocketKey = header("sec-websocket-key", 64).takeIf(String::isNotBlank)
         val details = JSONObject()
             .put("http_version", requestParts.getOrNull(2)?.takeIf { it.matches(Regex("HTTP/1\\.[01]")) } ?: "unknown")
             .put("host", header("host", 150))
@@ -298,7 +400,7 @@ class LocalHttpHoneypot(
             .put("content_length", header("content-length", 12).filter(Char::isDigit))
             .put("connection", header("connection", 40))
             .toString()
-        return ParsedRequest(requestParts[0].uppercase(Locale.ROOT), path, userAgent, details)
+        return ParsedRequest(requestParts[0].uppercase(Locale.ROOT), path, userAgent, details, matchesStatusEtag, webSocketKey)
     }
 
     private fun safeOriginAndPath(value: String): String = runCatching {
@@ -308,19 +410,49 @@ class LocalHttpHoneypot(
         "${uri.scheme ?: "http"}://$host$path"
     }.getOrDefault("")
 
-    private fun writeResponse(socket: Socket, status: Int, content: String) {
-        val body = content
-        val bodyBytes = body.toByteArray(StandardCharsets.UTF_8)
-        val reason = if (status == 200) "OK" else if (status == 400) "Bad Request" else "Not Found"
-        val headers = "HTTP/1.1 $status $reason\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bodyBytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'\r\n\r\n"
+    private fun writeResponse(socket: Socket, headRequest: Boolean, response: DecoyResponse) {
+        val noBodyStatus = response.status in setOf(101, 204, 304)
+        val reason = REASON_PHRASES[response.status] ?: "Response"
+        val headers = linkedMapOf(
+            "Content-Type" to response.contentType,
+            "Connection" to "close",
+            "Cache-Control" to "no-store",
+            "X-Content-Type-Options" to "nosniff",
+            "X-Frame-Options" to "DENY",
+        )
+        if (!noBodyStatus) headers["Content-Length"] = response.body.size.toString()
+        if (response.contentType.startsWith("text/html")) {
+            headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' ws:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+            headers["Referrer-Policy"] = "no-referrer"
+        }
+        headers.putAll(response.headers)
+        val headerBlock = buildString {
+            append("HTTP/1.1 ${response.status} $reason\r\n")
+            headers.forEach { (name, value) -> append("$name: $value\r\n") }
+            append("\r\n")
+        }
         socket.getOutputStream().apply {
-            write(headers.toByteArray(StandardCharsets.US_ASCII))
-            write(bodyBytes)
+            write(headerBlock.toByteArray(StandardCharsets.US_ASCII))
+            if (!headRequest && !noBodyStatus) write(response.body)
             flush()
         }
     }
 
-    private data class ParsedRequest(val method: String, val path: String, val userAgent: String, val details: String)
+    private data class DecoyResponse(
+        val status: Int,
+        val body: ByteArray,
+        val contentType: String,
+        val headers: Map<String, String> = emptyMap(),
+    )
+
+    private data class ParsedRequest(
+        val method: String,
+        val path: String,
+        val userAgent: String,
+        val details: String,
+        val matchesStatusEtag: Boolean,
+        val webSocketKey: String?,
+    )
 
     companion object {
         const val PORT = 8080
@@ -332,8 +464,32 @@ class LocalHttpHoneypot(
         const val MAX_USER_AGENT_LENGTH = 120
         const val SERVICE_NAME = "HoneyPhone"
         const val SERVICE_TYPE = "_http._tcp."
+        const val LOGO_PATH = "/assets/honeyphone-logo.png"
+        const val STATUS_ETAG = "\"honeyphone-status-v1\""
+        const val WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        val STATIC_ASSETS = mapOf(
+            LOGO_PATH to ("honeypot/brand-logo.png" to "image/png"),
+            "/favicon.ico" to ("honeypot/brand-logo.png" to "image/png"),
+            "/assets/decoy.css" to ("honeypot/decoy.css" to "text/css; charset=utf-8"),
+            "/assets/flows.js" to ("honeypot/flows.js" to "text/javascript; charset=utf-8"),
+        )
+        val SENSITIVE_PATHS = setOf("/.env", "/.git/config")
+        val REASON_PHRASES = mapOf(
+            101 to "Switching Protocols",
+            200 to "OK",
+            201 to "Created",
+            202 to "Accepted",
+            204 to "No Content",
+            304 to "Not Modified",
+            400 to "Bad Request",
+            401 to "Unauthorized",
+            403 to "Forbidden",
+            404 to "Not Found",
+            405 to "Method Not Allowed",
+            426 to "Upgrade Required",
+            503 to "Service Unavailable",
+        )
         val WHITESPACE = Regex("\\s+")
         val METHOD = Regex("[A-Za-z]{1,12}")
-        val DECOY_PATHS = setOf("/", "/admin", "/login", "/robots.txt", "/.env", "/.git/config", "/api/status")
     }
 }

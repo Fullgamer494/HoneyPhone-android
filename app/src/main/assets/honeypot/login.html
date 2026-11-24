@@ -4,40 +4,58 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>Acceso de red</title>
-  <style>
-    :root{color-scheme:dark;--black:#050505;--surface:#0b0b0d;--panel:#101012;--line:#29292d;--ink:#f7f7f7;--muted:#a4a4aa;--soft:#73737b}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 0,#242426 0,transparent 43%),var(--black);font:15px system-ui,sans-serif;color:var(--ink);position:relative;isolation:isolate}
-    body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:radial-gradient(circle,#fff 0.7px,transparent 1px);background-size:7px 7px;mask-image:radial-gradient(ellipse at 50% 0,#000 0,transparent 55%);opacity:.16}
-    main{width:min(100%,420px);border:1px solid #3a3a3e;border-radius:22px;padding:28px;background:linear-gradient(145deg,#141416f2,#09090bf2);box-shadow:0 28px 90px #000b;backdrop-filter:blur(18px)}
-    .brand{display:flex;align-items:center;gap:12px;margin-bottom:32px}.mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid #5c5c62;border-radius:11px;color:var(--ink);font:700 18px monospace;background:radial-gradient(circle,#fff 0.6px,transparent .9px);background-size:5px 5px;background-color:#111}.brand small,.eyebrow{color:var(--muted);font:10px monospace;letter-spacing:.14em;text-transform:uppercase}.brand strong{display:block;font-size:16px;letter-spacing:.01em}.eyebrow{color:var(--ink)}h1{font-size:30px;line-height:1.1;letter-spacing:-.04em;margin:10px 0}p{color:var(--muted);line-height:1.55}.field{display:grid;gap:7px;margin:18px 0}.field label{font-size:12px;color:#d0d0d3}.field input{width:100%;height:48px;border:1px solid #37373b;border-radius:9px;background:#08080a;color:var(--ink);padding:0 13px;font:14px system-ui}.field input:focus{outline:2px solid #a0a0a5;border-color:#d8d8da}button{width:100%;height:50px;margin-top:6px;border:1px solid #fff;border-radius:9px;background:#f5f5f5;color:#090909;font-weight:700;font-size:14px}button:active{background:#cfcfd2}footer{display:flex;justify-content:space-between;gap:12px;margin-top:25px;padding-top:16px;border-top:1px solid var(--line);color:var(--soft);font:10px monospace;letter-spacing:.05em}
-  </style>
+  <title>Acceso de operador · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
 </head>
-<body><main>
-  <div class="brand"><div class="mark">H</div><div><strong>HoneyPhone Network</strong><small>ACCESS NODE · 02</small></div></div>
-  <div class="eyebrow">Red local / autenticación</div>
-  <h1>Inicia sesión para continuar</h1>
-  <p>Confirma tu cuenta para consultar los recursos disponibles en esta red.</p>
-  <form id="access-form" autocomplete="off">
-    <div class="field"><label for="account">Cuenta</label><input id="account" name="account" autocomplete="off" placeholder="Nombre de usuario"></div>
-    <div class="field"><label for="access-code">Clave de acceso</label><input id="access-code" name="access-code" type="password" autocomplete="new-password" placeholder="••••••••"></div>
-    <button type="submit">Continuar</button>
-  </form>
-  <footer><span>ESTADO: DISPONIBLE</span><span>CONEXIÓN LOCAL</span></footer>
-  <script>
-    document.getElementById('access-form').addEventListener('submit', async event => {
-      event.preventDefault();
-      const button = event.currentTarget.querySelector('button');
-      button.disabled = true;
-      try {
-        const response = await fetch('/login', { method: 'POST' });
-        document.open();
-        document.write(await response.text());
-        document.close();
-      } catch (_) {
-        button.disabled = false;
-        button.textContent = 'No se pudo validar · intentar de nuevo';
-      }
-    });
-  </script>
-</main></body></html>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Portal de red local</small></div></div>
+      <span class="tag">Acceso protegido</span>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow">Nodo de acceso · 02</div>
+      <h1>Identifica tu sesión</h1>
+      <p class="lead">El portal local está disponible. Comprueba el acceso o consulta el estado del nodo.</p>
+    </section>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Acceso de operador</h2><p>Validación de sesión para recursos de red.</p></div><span class="status-dot">En línea</span></div>
+        <form method="post" action="/login" data-login-form autocomplete="off">
+          <div class="field"><label for="operator">Identificador</label><input id="operator" type="text" autocomplete="off" placeholder="Cuenta de operador"></div>
+          <div class="field"><label for="passcode">Clave de acceso</label><input id="passcode" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+          <button class="primary-button" type="submit">Validar sesión</button>
+        </form>
+        <div class="request-output" data-request-output aria-live="polite">Listo para validar. El formulario no transmite ni guarda los campos.</div>
+        <div class="note">HoneyPhone registra el método, la ruta y el resultado HTTP. No lee el cuerpo de las peticiones ni almacena contraseñas.</div>
+      </section>
+
+      <aside class="stack">
+        <section class="panel">
+          <div class="panel-head"><div><h2>Consultas rápidas</h2><p>Acciones independientes del portal.</p></div></div>
+          <div class="button-grid">
+            <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar servicio</strong><span>GET · 200</span></button>
+            <button class="flow-button" data-request data-method="HEAD" data-path="/status"><strong>Leer encabezados</strong><span>HEAD · 200</span></button>
+            <button class="flow-button" data-request data-method="OPTIONS" data-path="/api/status"><strong>Ver métodos</strong><span>OPTIONS · 204</span></button>
+            <button class="flow-button" data-request data-method="GET" data-path="/status" data-etag="status"><strong>Validar versión</strong><span>GET condicional · 304</span></button>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2>Actividad simulada</h2><p>Genera eventos para las métricas del honeypot.</p></div></div>
+          <div class="button-grid">
+            <button class="flow-button" data-request data-method="POST" data-path="/api/support"><strong>Enviar aviso local</strong><span>POST · 202</span></button>
+            <button class="flow-button" data-request data-method="GET" data-path="/maintenance"><strong>Ver contingencia</strong><span>GET · 503</span></button>
+            <button class="flow-button" data-request data-method="GET" data-path="/not-found"><strong>Consultar recurso</strong><span>GET · 404</span></button>
+            <button class="flow-button" data-request data-method="GET" data-path="/upgrade"><strong>Probar protocolo</strong><span>GET · 101</span></button>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="footer"><span>HONEYPHONE · PORTAL LOCAL</span><span>CONEXIÓN HTTP DE LA RED</span></footer>
+  </main>
+</body>
+</html>

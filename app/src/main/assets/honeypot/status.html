@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Estado del nodo · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Estado del nodo</small></div></div>
+      <span class="tag">Monitor local</span>
+    </header>
+    <section class="hero"><div class="eyebrow">Health monitor · nodo 02</div><h1>Servicios disponibles</h1><p class="lead">El panel presenta el estado publicado por el nodo local y permite probar validación de caché y consultas de encabezados.</p></section>
+
+    <section class="kpi-grid">
+      <article class="kpi"><span>Servicio web</span><strong class="status-dot">OPERATIVO</strong></article>
+      <article class="kpi"><span>Interfaz de estado</span><strong>HTTP/1.1</strong></article>
+      <article class="kpi"><span>Versión de caché</span><strong>V1</strong></article>
+      <article class="kpi"><span>Última consulta local</span><strong data-clock>--:--</strong></article>
+    </section>
+
+    <section class="panel section-gap">
+      <div class="panel-head"><div><h2>Pruebas del monitor</h2><p>Las respuestas 304 y 503 son escenarios locales del señuelo.</p></div></div>
+      <div class="button-grid">
+        <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Leer estado del servicio</strong><span>GET · 200</span></button>
+        <button class="flow-button" data-request data-method="HEAD" data-path="/status"><strong>Leer solo encabezados</strong><span>HEAD · 200</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/status" data-etag="status"><strong>Validar ETag</strong><span>GET condicional · 304</span></button>
+        <button class="flow-button" data-request data-method="OPTIONS" data-path="/status"><strong>Consultar métodos</strong><span>OPTIONS · 204</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/maintenance"><strong>Probar contingencia</strong><span>GET · 503</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/upgrade"><strong>Intentar protocolo alterno</strong><span>GET · 101</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/bad-request"><strong>Simular solicitud inválida</strong><span>GET · 400</span></button>
+        <button class="flow-button" data-request data-method="POST" data-path="/api/status"><strong>Probar método no permitido</strong><span>POST · 405</span></button>
+      </div>
+      <div class="request-output" data-request-output aria-live="polite">Selecciona una comprobación para ver el resultado HTTP.</div>
+    </section>
+    <footer class="footer"><span>HONEYPHONE · HEALTH MONITOR</span><span>RESPUESTAS Y SOLICITUDES DE DEMOSTRACIÓN</span></footer>
+  </main>
+</body>
+</html>

@@ -4,7 +4,7 @@ enum class ReviewSource { LIVE, DEMO }
 enum class SignalKind { WIFI_SECURITY, CAPTIVE_PORTAL, DNS, HTTPS }
 enum class SignalOutcome { PASS, ATTENTION, UNKNOWN, NOT_APPLICABLE }
 enum class ReviewVerdict { NO_DISCREPANCIES, ATTENTION_REQUIRED, INCOMPLETE }
-enum class AppDestination { HOME, LIVE_REVIEW, DEMO_GALLERY, RESULT, DETAIL, HISTORY, HONEYPOT, SETTINGS }
+enum class AppDestination { HOME, LIVE_REVIEW, DEMO_GALLERY, RESULT, DETAIL, HISTORY, HONEYPOT, SETTINGS, PROFILE }
 enum class HoneypotPhase { STOPPED, STARTING, LISTENING, ERROR }
 enum class HoneypotProfile(val entryPath: String) {
     LOGIN_PORTAL("/"), ADMIN_CONSOLE("/admin"), COMPROMISED_SITE("/")
@@ -60,6 +60,8 @@ data class HoneyPhoneUiState(
     val authBusy: Boolean = false,
     val authMessage: String? = null,
     val accountEmail: String? = null,
+    val accountDeleteBusy: Boolean = false,
+    val accountMessage: String? = null,
     val destination: AppDestination = AppDestination.HOME,
     val activeTab: AppDestination = AppDestination.HOME,
     val scenarios: List<DemoScenario> = emptyList(),
@@ -84,4 +86,5 @@ data class HoneyPhoneUiState(
     val selectedHoneypotSessionId: String? = null,
     val honeypotRemoteMessage: String? = null,
     val apiConnection: ApiConnectionState = ApiConnectionState.CHECKING,
+    val automaticWifiScansEnabled: Boolean = true,
 )

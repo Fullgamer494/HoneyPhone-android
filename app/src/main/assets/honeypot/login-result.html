@@ -1,4 +1,32 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Comprobación de acceso</title>
-<style>:root{color-scheme:dark;--black:#050505;--panel:#101012;--line:#303034;--ink:#f7f7f7;--muted:#a4a4aa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 0,#242426 0,transparent 43%),var(--black);font:15px system-ui,sans-serif;color:var(--ink);position:relative;isolation:isolate}body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:radial-gradient(circle,#fff .7px,transparent 1px);background-size:7px 7px;mask-image:radial-gradient(ellipse at 50% 0,#000 0,transparent 55%);opacity:.14}main{width:min(100%,420px);border:1px solid #3a3a3e;border-radius:22px;padding:28px;background:#101012ed;backdrop-filter:blur(18px)}.mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid #5c5c62;border-radius:11px;color:var(--ink);font:700 18px monospace;background:radial-gradient(circle,#fff .6px,transparent .9px);background-size:5px 5px;background-color:#111}small{display:block;margin-top:24px;color:#d0d0d3;font:10px monospace;letter-spacing:.14em;text-transform:uppercase}h1{font-size:28px;line-height:1.15;letter-spacing:-.03em}p{color:var(--muted);line-height:1.55}a{display:inline-block;margin-top:14px;color:var(--ink);text-decoration:none;border-bottom:1px solid #85858b;padding-bottom:3px}</style></head>
-<body><main><div class="mark">H</div><small>Comprobación de acceso</small><h1>No se pudo validar la sesión</h1><p>Vuelve a la página anterior e inténtalo de nuevo.</p><a href="/">Regresar al acceso →</a></main></body></html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Validación pendiente · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Portal de red local</small></div></div>
+      <span class="tag">Validación</span>
+    </header>
+    <section class="hero"><div class="eyebrow">Respuesta del nodo · HTTP 401</div><h1>Sesión no validada</h1><p class="lead">El acceso requiere una comprobación adicional. No se transmitieron los campos del formulario.</p></section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Detalle de la solicitud</h2><p>La petición quedó registrada como un intento de acceso.</p></div><span class="code">POST /login</span></div>
+      <div class="alert"><strong>Acceso pendiente</strong><p>La respuesta del señuelo no autentica ni crea una sesión real.</p></div>
+      <div class="button-grid">
+        <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar estado</strong><span>GET · 200</span></button>
+        <button class="flow-button" data-request data-method="PATCH" data-path="/api/settings"><strong>Actualizar preferencia</strong><span>PATCH · 200</span></button>
+        <button class="flow-button" data-request data-method="DELETE" data-path="/api/session"><strong>Revocar sesión local</strong><span>DELETE · 204</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/.env"><strong>Consultar recurso protegido</strong><span>GET · 403</span></button>
+      </div>
+      <div class="request-output" data-request-output aria-live="polite">Las acciones generan solicitudes independientes dentro del honeypot.</div>
+    </section>
+    <footer class="footer"><span>HONEYPHONE · REGISTRO LOCAL</span><span>ESTADO DE ACCESO: NO VALIDADO</span></footer>
+  </main>
+</body>
+</html>

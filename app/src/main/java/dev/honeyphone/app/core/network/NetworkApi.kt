@@ -22,8 +22,11 @@ class NetworkApi(context: Context) {
     fun post(payload: CheckPayload): JSONObject = request("POST", "network-checks", payload.json())
     fun registerAccount(email: String, password: String): JSONObject = request("POST", "auth/register", JSONObject().put("email", email).put("password", password).toString(), authenticated = false)
     fun login(email: String, password: String): JSONObject = request("POST", "auth/login", JSONObject().put("email", email).put("password", password).toString(), authenticated = false)
+    fun requestEmailVerification(email: String): JSONObject = request("POST", "auth/verify-email/request", JSONObject().put("email", email).toString(), authenticated = false)
+    fun requestPasswordReset(email: String): JSONObject = request("POST", "auth/password/forgot", JSONObject().put("email", email).toString(), authenticated = false)
     fun googleLogin(idToken: String): JSONObject = request("POST", "auth/google", JSONObject().put("id_token", idToken).toString(), authenticated = false)
     fun account(): JSONObject = request("GET", "auth/me")
+    fun deleteAccount() { request("DELETE", "auth/me") }
     fun health(): JSONObject {
         val healthUrl=base.substringBefore("api/v1/")+"healthz"
         val connection=(URL(healthUrl).openConnection() as HttpURLConnection).apply {
@@ -83,7 +86,22 @@ class NetworkApi(context: Context) {
             if (status !in 200..299) {
                 val raw = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 val error = runCatching { JSONObject(raw) }.getOrNull()
-                throw ApiFailure(status, error?.optString("code").takeUnless { it.isNullOrBlank() } ?: "HTTP_$status", error?.optString("message").takeUnless { it.isNullOrBlank() } ?: "No fue posible completar la solicitud.")
+                val detail = error?.opt("detail")
+                val nested = detail as? JSONObject
+                val validationMessage = (detail as? JSONArray)?.let { errors ->
+                    (0 until errors.length()).mapNotNull { index ->
+                        errors.optJSONObject(index)?.optString("msg")?.takeIf(String::isNotBlank)
+                    }.distinct().joinToString(" ").takeIf(String::isNotBlank)
+                }
+                val code = error?.optString("code")?.takeIf(String::isNotBlank)
+                    ?: nested?.optString("code")?.takeIf(String::isNotBlank)
+                    ?: "HTTP_$status"
+                val message = error?.optString("message")?.takeIf(String::isNotBlank)
+                    ?: nested?.optString("message")?.takeIf(String::isNotBlank)
+                    ?: validationMessage
+                    ?: (detail as? String)?.takeIf(String::isNotBlank)
+                    ?: "No fue posible completar la solicitud."
+                throw ApiFailure(status, code, message)
             }
             if (status == 204) return JSONObject()
             return connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }

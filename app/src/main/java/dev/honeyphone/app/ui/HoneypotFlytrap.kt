@@ -1,8 +1,12 @@
 package dev.honeyphone.app.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Color as AndroidColor
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.view.View
+import android.widget.ImageView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -14,87 +18,110 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.honeyphone.app.R
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+
+private const val STALKING_SCENE = "stalking-idle.webp"
+private const val CLOSED_IDLE_SCENE = "closed-idle.webp"
+
+private val devourScenes = listOf(
+    "devour-fly.webp",
+    "devour-moth.webp",
+    "devour-wasp.webp",
+    "devour-roach.webp",
+)
+
+private data class FlytrapScene(val file: String, val revision: Int)
 
 @Composable
 internal fun HoneypotFlytrap(
     isListening: Boolean,
     latestEventId: String?,
     modifier: Modifier = Modifier,
-    size: Dp = 240.dp,
+    size: Dp = 280.dp,
 ) {
-    val jaw = remember { Animatable(if (isListening) 0f else 1f) }
-    val flight = remember { Animatable(0f) }
-    var seenEventId by remember { mutableStateOf(latestEventId) }
-    var insectIndex by remember { mutableIntStateOf(-1) }
-    var nextInsect by remember { mutableIntStateOf(0) }
-    val insects = listOf(R.drawable.flytrap_fly, R.drawable.flytrap_moth, R.drawable.flytrap_wasp, R.drawable.flytrap_roach)
+    var scene by remember(isListening) {
+        mutableStateOf(FlytrapScene(if (isListening) STALKING_SCENE else CLOSED_IDLE_SCENE, 0))
+    }
+    var previousEventId by remember { mutableStateOf(latestEventId) }
+    var wasListening by remember { mutableStateOf(isListening) }
+    var nextDevourScene by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(isListening, latestEventId) {
         if (!isListening) {
-            insectIndex = -1
-            jaw.animateTo(1f, tween(420))
-            seenEventId = latestEventId
+            previousEventId = latestEventId
+            wasListening = false
+            scene = FlytrapScene(CLOSED_IDLE_SCENE, scene.revision + 1)
             return@LaunchedEffect
         }
-        jaw.animateTo(0f, tween(420))
-        if (latestEventId != null && latestEventId != seenEventId) {
-            seenEventId = latestEventId
-            insectIndex = nextInsect % insects.size
-            nextInsect++
-            flight.snapTo(0f)
-            val flightJob = launch { flight.animateTo(1f, tween(2800)) }
-            delay(900)
-            jaw.animateTo(1f, tween(260))
-            delay(800)
-            jaw.animateTo(0f, tween(520))
-            flightJob.join()
-            insectIndex = -1
+
+        if (!wasListening) {
+            wasListening = true
+            previousEventId = latestEventId
+            if (scene.file != STALKING_SCENE) {
+                scene = FlytrapScene(STALKING_SCENE, scene.revision + 1)
+            }
+            return@LaunchedEffect
+        }
+
+        if (latestEventId != null && latestEventId != previousEventId) {
+            previousEventId = latestEventId
+            val devourScene = devourScenes[nextDevourScene % devourScenes.size]
+            nextDevourScene++
+            scene = FlytrapScene(devourScene, scene.revision + 1)
+            delay(8_500)
+            scene = FlytrapScene(STALKING_SCENE, scene.revision + 1)
         } else {
-            seenEventId = latestEventId
+            previousEventId = latestEventId
+            if (scene.file != STALKING_SCENE) {
+                scene = FlytrapScene(STALKING_SCENE, scene.revision + 1)
+            }
         }
     }
 
-    Box(modifier.size(size).semantics {
-        contentDescription = if (isListening) "Venus atrapamoscas abierta; el señuelo está escuchando" else "Venus atrapamoscas cerrada; el señuelo está detenido"
-    }) {
-        Image(
-            painter = painterResource(R.drawable.flytrap_open),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - jaw.value },
+    Box(
+        modifier.size(size).semantics {
+            contentDescription = if (isListening) {
+                "Atrapamoscas HoneyPhone animada; el señuelo está escuchando"
+            } else {
+                "Atrapamoscas HoneyPhone animada; el señuelo está detenido"
+            }
+        },
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context -> FlytrapAnimationView(context, scene) },
+            update = { view -> view.show(scene) },
         )
-        Image(
-            painter = painterResource(R.drawable.flytrap_closed),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = jaw.value },
-        )
-        if (insectIndex >= 0) {
-            Image(
-                painter = painterResource(insects[insectIndex]),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().graphicsLayer {
-                    val progress = flight.value
-                    alpha = when {
-                        progress < 0.12f -> progress / 0.12f
-                        progress < 0.48f -> 1f
-                        progress < 0.72f -> (0.72f - progress) / 0.24f
-                        else -> 0f
-                    }
-                    translationX = -this.size.width * (1f - progress) * 0.35f
-                    translationY = -this.size.height * (1f - progress) * 0.3f
-                    rotationZ = (1f - progress) * -14f
-                    scaleX = 0.8f + progress * 0.2f
-                    scaleY = scaleX
-                },
-            )
+    }
+}
+
+@SuppressLint("NewApi")
+private class FlytrapAnimationView(context: Context, initialScene: FlytrapScene) : ImageView(context) {
+    private var activeScene: FlytrapScene? = null
+
+    init {
+        scaleType = ScaleType.FIT_CENTER
+        setBackgroundColor(AndroidColor.TRANSPARENT)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        show(initialScene)
+    }
+
+    fun show(scene: FlytrapScene) {
+        if (activeScene == scene) return
+        activeScene = scene
+        (drawable as? AnimatedImageDrawable)?.stop()
+
+        val source = ImageDecoder.createSource(context.assets, "honeypot/webp/${scene.file}")
+        val next = ImageDecoder.decodeDrawable(source)
+        setImageDrawable(next)
+        if (next is AnimatedImageDrawable) {
+            next.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
+            next.start()
         }
     }
 }

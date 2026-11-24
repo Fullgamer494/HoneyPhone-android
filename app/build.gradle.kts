@@ -45,8 +45,8 @@ android {
         applicationId = "dev.honeyphone.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 24
+        versionName = "0.5.19"
         listOf("PROBE_DNS_NAME", "PROBE_EXPECTED_TXT", "PROBE_DOH_URL", "PROBE_HTTPS_URL", "PROBE_CONFIG_VERSION").forEach { key -> buildConfigField("String", key, probeLiteral(key)) }
         buildConfigField("String", "API_BASE_URL", "\"\"")
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", buildConfigLiteral(googleServerClientId))

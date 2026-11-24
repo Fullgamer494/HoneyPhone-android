@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Solicitud incompleta · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Validador local</small></div></div><span class="tag">HTTP 400</span></header>
+    <section class="hero"><div class="eyebrow">Solicitud incompleta</div><h1>No se pudo interpretar</h1><p class="lead">La conexión terminó antes de completar los encabezados HTTP. El nodo continúa disponible.</p></section>
+    <section class="panel"><div class="button-grid">
+      <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar estado</strong><span>GET · 200</span></button>
+      <button class="flow-button" data-request data-method="GET" data-path="/missing"><strong>Consultar ruta</strong><span>GET · 404</span></button>
+      <button class="flow-button" data-request data-method="OPTIONS" data-path="/api/status"><strong>Consultar métodos</strong><span>OPTIONS · 204</span></button>
+      <button class="flow-button" data-request data-method="GET" data-path="/maintenance"><strong>Consultar contingencia</strong><span>GET · 503</span></button>
+    </div><div class="request-output" data-request-output aria-live="polite">La respuesta original fue 400 Bad Request.</div></section>
+    <footer class="footer"><span>HONEYPHONE · REQUEST VALIDATION</span><span>CONEXIÓN LOCAL</span></footer>
+  </main>
+</body>
+</html>

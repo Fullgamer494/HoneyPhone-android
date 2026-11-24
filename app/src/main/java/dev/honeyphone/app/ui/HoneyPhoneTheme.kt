@@ -10,14 +10,14 @@ import dev.honeyphone.app.R
 
 object HoneyStyle {
     val Background = Color(0xFF000000)
-    val Surface = Color(0xFF090A0B)
+    val Surface = Color(0xFF0B0B0B)
     val Ink = Color(0xFFF4F4F4)
-    val Muted = Color(0xFFB4B7BA)
+    val Muted = Color(0xFFB8B8B8)
     val Lime = Color(0xFFFFFFFF)
-    val Aqua = Color(0xFFD0D3D6)
+    val Aqua = Color(0xFFD6D6D6)
     val Amber = Color(0xFFF5B700)
     val Warning = Color(0xFFFFD166)
-    val Line = Color(0xFF242830)
+    val Line = Color(0xFF292929)
     val Mono = FontFamily(
         Font(R.font.jetbrains_mono_variable, FontWeight.Normal),
         Font(R.font.jetbrains_mono_variable, FontWeight.Medium),
@@ -38,13 +38,21 @@ object HoneyStyle {
 
 private val HoneyColors = darkColorScheme(
     primary = HoneyStyle.Lime, onPrimary = HoneyStyle.Background,
+    primaryContainer = Color(0xFF303030), onPrimaryContainer = HoneyStyle.Ink,
     secondary = HoneyStyle.Aqua, onSecondary = HoneyStyle.Background,
+    secondaryContainer = Color(0xFF303030), onSecondaryContainer = HoneyStyle.Ink,
     tertiary = HoneyStyle.Amber, onTertiary = HoneyStyle.Background,
+    tertiaryContainer = Color(0xFF303030), onTertiaryContainer = HoneyStyle.Ink,
     background = HoneyStyle.Background, onBackground = HoneyStyle.Ink,
     surface = HoneyStyle.Surface, onSurface = HoneyStyle.Ink,
-    surfaceVariant = Color(0xFF121416), onSurfaceVariant = HoneyStyle.Muted,
+    surfaceVariant = Color(0xFF141414), onSurfaceVariant = HoneyStyle.Muted,
     outline = HoneyStyle.Line, error = Color(0xFFFFA99B),
-    surfaceContainer = HoneyStyle.Surface,
+    surfaceDim = Color(0xFF070707), surfaceBright = Color(0xFF242424),
+    surfaceContainerLowest = Color(0xFF000000), surfaceContainerLow = Color(0xFF090909),
+    surfaceContainer = HoneyStyle.Surface, surfaceContainerHigh = Color(0xFF121212),
+    surfaceContainerHighest = Color(0xFF191919), surfaceTint = HoneyStyle.Ink,
+    inverseSurface = HoneyStyle.Ink, inverseOnSurface = HoneyStyle.Background,
+    inversePrimary = Color(0xFF555555),
 )
 private val HoneyType = Typography(
     headlineLarge = TextStyle(fontFamily=HoneyStyle.Display, fontWeight=FontWeight.SemiBold, fontSize=34.sp, lineHeight=42.sp, letterSpacing=(-1).sp),

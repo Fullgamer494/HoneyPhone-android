@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Servicio en mantenimiento · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Servicio local</small></div></div><span class="tag tag-danger">HTTP 503</span></header>
+    <section class="hero"><div class="eyebrow">Interrupción temporal</div><h1>Servicio en mantenimiento</h1><p class="lead">El nodo no pudo completar esta solicitud. La respuesta 503 queda reflejada en las métricas.</p></section>
+    <section class="panel"><div class="panel-head"><div><h2>Diagnóstico</h2><p>Consulta el estado público o valida una respuesta condicional.</p></div></div>
+      <div class="button-grid">
+        <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar servicio auxiliar</strong><span>GET · 200</span></button>
+        <button class="flow-button" data-request data-method="HEAD" data-path="/status"><strong>Leer encabezados</strong><span>HEAD · 200</span></button>
+        <button class="flow-button" data-request data-method="GET" data-path="/status" data-etag="status"><strong>Validar versión guardada</strong><span>GET · 304</span></button>
+        <button class="flow-button" data-request data-method="POST" data-path="/api/alerts"><strong>Enviar reporte</strong><span>POST · 202</span></button>
+      </div>
+      <div class="request-output" data-request-output aria-live="polite">La solicitud que abrió esta vista recibió 503.</div>
+    </section>
+    <footer class="footer"><span>HONEYPHONE · RESPUESTA DE CONTINGENCIA</span><span>ESTADO HTTP 503</span></footer>
+  </main>
+</body>
+</html>

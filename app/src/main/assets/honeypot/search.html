@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Consulta de recursos · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Índice local</small></div></div>
+      <span class="tag">Consulta de recursos</span>
+    </header>
+    <section class="hero"><div class="eyebrow">Búsqueda interna · solo lectura</div><h1>Consulta el índice del nodo</h1><p class="lead">Busca un registro de demostración o solicita metadatos del servicio. El texto que escribas no se envía.</p></section>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Buscar por referencia</h2><p>El botón genera una consulta fija al índice del nodo.</p></div></div>
+        <div class="field"><label for="reference">Referencia local</label><input id="reference" autocomplete="off" placeholder="HP-204 · prueba local"></div>
+        <button class="primary-button" type="button" data-request data-method="GET" data-path="/search?q=HP-204">Consultar índice</button>
+        <div class="request-output" data-request-output aria-live="polite">La consulta usa una referencia de demostración fija.</div>
+        <div class="note">Los campos de esta página no se incorporan a la solicitud ni se guardan.</div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Operaciones del índice</h2><p>Solicitudes adicionales para explorar el registro.</p></div></div>
+        <div class="button-grid">
+          <button class="flow-button" data-request data-method="HEAD" data-path="/search"><strong>Comprobar recurso</strong><span>HEAD · 200</span></button>
+          <button class="flow-button" data-request data-method="OPTIONS" data-path="/search"><strong>Ver operaciones aceptadas</strong><span>OPTIONS · 204</span></button>
+          <button class="flow-button" data-request data-method="POST" data-path="/api/alerts"><strong>Reportar una entrada</strong><span>POST · 202</span></button>
+          <button class="flow-button" data-request data-method="GET" data-path="/missing"><strong>Consultar otra referencia</strong><span>GET · 404</span></button>
+        </div>
+      </section>
+    </div>
+    <footer class="footer"><span>HONEYPHONE · RESOURCE INDEX</span><span>VISTA INDEPENDIENTE DEL NODO</span></footer>
+  </main>
+</body>
+</html>

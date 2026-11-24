@@ -1,9 +1,48 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Estado del sitio</title>
-<style>
-  :root{color-scheme:dark;--black:#050505;--panel:#09090b;--line:#45454a;--ink:#f7f7f7;--muted:#b0b0b5;--soft:#85858b}
-  *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 35%,#29292c 0,transparent 48%),var(--black);color:var(--ink);font:14px system-ui,sans-serif;display:grid;place-items:center;padding:20px;position:relative;isolation:isolate}
-  body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:radial-gradient(circle,#fff .75px,transparent 1px);background-size:6px 6px;mask-image:radial-gradient(ellipse at 50% 38%,#000 0,transparent 62%);opacity:.18}
-  .frame{width:min(100%,820px);border:1px solid #55555b;background:#070709ed;padding:clamp(22px,6vw,56px);box-shadow:0 0 70px #000b;backdrop-filter:blur(12px)}.brand{display:flex;justify-content:space-between;gap:14px;align-items:center;padding-bottom:18px;border-bottom:1px solid var(--line);font:10px monospace;letter-spacing:.12em;color:var(--muted)}.signal{color:#f2f2f2}.stamp{display:inline-block;margin-top:34px;border:1px solid #a0a0a6;padding:7px 10px;color:#f0f0f1;font:10px monospace;letter-spacing:.14em}h1{max-width:700px;margin:20px 0;font:700 clamp(38px,9vw,88px)/.92 system-ui,sans-serif;letter-spacing:-.06em;text-transform:uppercase;text-shadow:0 0 26px #ffffff22}.intro{max-width:560px;color:#c6c6ca;font-size:17px;line-height:1.55}.rule{height:1px;background:linear-gradient(90deg,#eee,transparent);margin:34px 0}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;color:var(--muted);font:10px monospace;letter-spacing:.08em}.meta strong{display:block;margin-top:7px;color:var(--ink);font-size:13px}a{display:inline-block;margin-top:28px;color:var(--ink);text-decoration:none;border-bottom:1px solid #77777e;padding-bottom:4px;font:12px monospace}
-</style></head>
-<body><main class="frame"><header class="brand"><span>HONEYPHONE / ARCHIVE NODE</span><span class="signal">● SYSTEM NOTICE</span></header><span class="stamp">INTEGRITY ALERT · 04</span><h1>Este sitio ha sido intervenido</h1><p class="intro">El contenido original de este nodo ya no está disponible. El equipo de operaciones fue notificado y está revisando el acceso.</p><div class="rule"></div><section class="meta"><div>ESTADO<strong>EN REVISIÓN</strong></div><div>REFERENCIA<strong>HP-LOCAL-204</strong></div><div>ÚLTIMA ACTIVIDAD<strong>HACE UN MOMENTO</strong></div></section><a href="/admin">Consultar estado del nodo →</a></main></body></html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Aviso de integridad · HoneyPhone</title>
+  <link rel="stylesheet" href="/assets/decoy.css">
+  <script defer src="/assets/flows.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><img src="/assets/honeyphone-logo.png" alt=""><div><strong>HoneyPhone</strong><small>Archivo local</small></div></div>
+      <span class="tag">Aviso de integridad</span>
+    </header>
+    <section class="hero"><div class="eyebrow">Nodo de archivo · incidente 04</div><h1>Se detectó actividad inusual</h1><p class="lead">El contenido de este nodo se encuentra bajo revisión. Las consultas y los intentos de actualización quedan registrados.</p></section>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Estado del sitio</h2><p>El acceso a los recursos principales está limitado temporalmente.</p></div><span class="tag tag-warning">En revisión</span></div>
+        <div class="kpi-grid">
+          <article class="kpi"><span>Referencia</span><strong>HP-204</strong></article>
+          <article class="kpi"><span>Integridad</span><strong>VERIFICANDO</strong></article>
+          <article class="kpi"><span>Registros</span><strong>ACTIVOS</strong></article>
+          <article class="kpi"><span>Modo</span><strong>SOLO LECTURA</strong></article>
+        </div>
+        <div class="rule"></div>
+        <div class="alert"><strong>Contenido bajo revisión</strong><p>No se requieren credenciales. Este nodo local conserva solo metadatos de las solicitudes.</p></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>Verificaciones</h2><p>Prueba respuestas de éxito, caché, error y contingencia.</p></div></div>
+        <div class="button-grid">
+          <button class="flow-button" data-request data-method="GET" data-path="/api/status"><strong>Consultar disponibilidad</strong><span>GET · 200</span></button>
+          <button class="flow-button" data-request data-method="GET" data-path="/status" data-etag="status"><strong>Comparar versión</strong><span>GET · 304</span></button>
+          <button class="flow-button" data-request data-method="POST" data-path="/api/alerts"><strong>Enviar reporte local</strong><span>POST · 202</span></button>
+          <button class="flow-button" data-request data-method="GET" data-path="/maintenance"><strong>Revisar contingencia</strong><span>GET · 503</span></button>
+          <button class="flow-button" data-request data-method="DELETE" data-path="/api/session"><strong>Revocar sesión</strong><span>DELETE · 204</span></button>
+          <button class="flow-button" data-request data-method="GET" data-path="/upgrade"><strong>Probar protocolo heredado</strong><span>GET · 101</span></button>
+        </div>
+        <div class="request-output" data-request-output aria-live="polite">Los controles emiten solicitudes al mismo nodo; no abren otras vistas.</div>
+      </section>
+    </div>
+    <footer class="footer"><span>HONEYPHONE · ARCHIVE NODE</span><span>EVENTOS LOCALES DE ESTA SESIÓN</span></footer>
+  </main>
+</body>
+</html>

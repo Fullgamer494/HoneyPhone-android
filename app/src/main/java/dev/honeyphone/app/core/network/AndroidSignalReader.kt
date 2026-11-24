@@ -10,17 +10,24 @@ import dev.honeyphone.app.model.WifiMetrics
 import android.os.Build
 import androidx.core.content.getSystemService
 import org.json.JSONObject
+import java.net.Inet4Address
 import java.util.UUID
 
 data class WifiReading(val signals:List<SignalPayload>,val metrics:WifiMetrics?,val networkChanged:Boolean=false)
 
+class NoWifiConnectionException(message:String="Conecta el teléfono a una red Wi‑Fi para iniciar el escaneo. Los datos móviles no generan una lectura de red.") : IllegalStateException(message)
+
 class AndroidSignalReader(context: Context) {
     private val connectivity = context.getSystemService<ConnectivityManager>()
 
-    suspend fun read(): WifiReading {
+    suspend fun read(requireValidatedInternet:Boolean=false): WifiReading {
         val started=System.nanoTime()
-        val before=connectivity?.activeNetwork
-        val caps=before?.let{connectivity?.getNetworkCapabilities(it)}
+        val manager=connectivity ?: throw NoWifiConnectionException()
+        val before=manager.findWifiNetwork(requireValidatedInternet=requireValidatedInternet) ?: throw NoWifiConnectionException(
+            if(requireValidatedInternet) "El escaneo automático espera una red Wi‑Fi con acceso a Internet verificado."
+            else "Conecta el teléfono a una red Wi‑Fi para iniciar el escaneo. Los datos móviles no generan una lectura de red."
+        )
+        val caps=manager.getNetworkCapabilities(before)
         val vpn=caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN)==true
         val hasWifi=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true && !vpn
         fun guarded(kind:String,body:()->SignalPayload)=try{body()}catch(e:SecurityException){unknown(kind,"PERMISSION_DENIED",elapsed(started))}
@@ -30,10 +37,20 @@ class AndroidSignalReader(context: Context) {
             else guarded("CAPTIVE_PORTAL"){portalSignal(caps,hasWifi,elapsed(started))}
         val snapshot=if(hasWifi)metrics(caps) else null
         val probes=ControlledProbes().read(if(hasWifi)before else null)
-        val changed=before!=connectivity?.activeNetwork
+        val stillConnected=manager.allNetworks.any { network ->
+            network==before && manager.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
+        }
+        val changed=!stillConnected
         val signals=listOf(security,portal)+probes
         return if(changed)WifiReading(signals.map { it.copy(outcome="UNKNOWN",reasonCode="NETWORK_CHANGED",evidence=JSONObject().put("reason","NETWORK_CHANGED")) },null,true)
             else WifiReading(signals,snapshot)
+    }
+
+    companion object {
+        fun hasValidatedWifi(context: Context): Boolean {
+            val manager=context.getSystemService<ConnectivityManager>() ?: return false
+            return manager.findWifiNetwork(requireValidatedInternet=true)!=null
+        }
     }
 
     private fun metrics(caps:NetworkCapabilities?):WifiMetrics {
@@ -101,4 +118,15 @@ class AndroidSignalReader(context: Context) {
         UUID.randomUUID().toString(), kind, "UNKNOWN", reason, JSONObject().put("reason", reason), ms,
     )
     private fun elapsed(start: Long) = ((System.nanoTime() - start) / 1_000_000L).toInt().coerceAtLeast(0)
+}
+
+private fun ConnectivityManager.findWifiNetwork(requireValidatedInternet:Boolean):Network? = allNetworks.firstOrNull { network ->
+    val capabilities=getNetworkCapabilities(network)
+    capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true &&
+        (!requireValidatedInternet ||
+            (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))) &&
+        getLinkProperties(network)?.linkAddresses?.any {
+            it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isLinkLocalAddress
+        }==true
 }

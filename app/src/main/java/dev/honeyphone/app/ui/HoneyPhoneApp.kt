@@ -7,26 +7,29 @@ import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -34,12 +37,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +63,7 @@ import java.io.File
 import java.text.DateFormat
 import java.time.Instant
 import java.util.Date
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,11 +72,41 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val screenStateHolder=rememberSaveableStateHolder()
+    var showStartupAnimation by remember { mutableStateOf(true) }
+    var startupAnimationStarted by remember { mutableStateOf(false) }
     var showProductTour by rememberSaveable { mutableStateOf(false) }
     var productTourStep by rememberSaveable { mutableIntStateOf(0) }
+    var productTourBounds by remember { mutableStateOf<Rect?>(null) }
+    var transientMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(startupAnimationStarted) {
+        if (startupAnimationStarted) {
+            delay(4_800)
+            showStartupAnimation = false
+        }
+    }
+    LaunchedEffect(Unit) {
+        delay(10_000)
+        showStartupAnimation = false
+    }
     LaunchedEffect(Unit) {
         if (!context.getSharedPreferences("honeyphone_ui", Context.MODE_PRIVATE)
                 .getBoolean("product_tour_completed", false)) showProductTour = true
+    }
+    LaunchedEffect(transientMessage) {
+        if(transientMessage!=null) { delay(2400);transientMessage=null }
+    }
+    LaunchedEffect(showProductTour,productTourStep,state.authenticated) {
+        if(!showProductTour || !state.authenticated) return@LaunchedEffect
+        productTourBounds=null
+        when(PRODUCT_TOUR_STEPS[productTourStep.coerceIn(PRODUCT_TOUR_STEPS.indices)].destination) {
+            AppDestination.HOME -> viewModel.openHome()
+            AppDestination.DEMO_GALLERY -> viewModel.openDemoGallery()
+            AppDestination.HONEYPOT -> viewModel.openHoneypot()
+            AppDestination.HISTORY -> viewModel.openHistory()
+            AppDestination.SETTINGS -> viewModel.openProfile()
+            AppDestination.PROFILE -> viewModel.openProfile()
+            else -> viewModel.openHome()
+        }
     }
     LaunchedEffect(state.exportJson) {
         val json = state.exportJson ?: return@LaunchedEffect
@@ -80,7 +121,7 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
         context.startActivity(Intent.createChooser(send, "Compartir revisión HoneyPhone"))
         viewModel.clearMessage()
     }
-    val canGoBack = state.destination in setOf(AppDestination.LIVE_REVIEW, AppDestination.DEMO_GALLERY, AppDestination.RESULT, AppDestination.DETAIL)
+    val canGoBack = state.destination in setOf(AppDestination.LIVE_REVIEW, AppDestination.DEMO_GALLERY, AppDestination.RESULT, AppDestination.DETAIL, AppDestination.PROFILE)
     BackHandler(enabled=canGoBack) { viewModel.goBack() }
     Box(Modifier.fillMaxSize()) {
         TechBackground()
@@ -93,15 +134,18 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                 googleConfigured=dev.honeyphone.app.BuildConfig.GOOGLE_SERVER_CLIENT_ID.isNotBlank(),
                 onSubmit=viewModel::authenticate,
                 onGoogleToken=viewModel::authenticateWithGoogle,
+                onResendVerification=viewModel::resendEmailVerification,
+                onPasswordRecovery=viewModel::requestPasswordRecovery,
             )
         } else {
         Scaffold(
+            modifier=Modifier.fillMaxSize(),
             containerColor=Color.Transparent, contentColor=HoneyStyle.Ink,
             topBar={
                 TopAppBar(
                     title={
                         Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            Image(painterResource(R.drawable.ic_honeyphone),contentDescription=null,modifier=Modifier.size(36.dp))
+                            Image(painterResource(R.drawable.logo_sin_fondo),contentDescription=null,modifier=Modifier.size(36.dp).padding(3.dp))
                             Text("HoneyPhone", style=MaterialTheme.typography.titleMedium)
                         }
                     },
@@ -110,42 +154,66 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription="Volver")
                         }
                     },
-                    actions={
-                        IconButton(onClick=viewModel::signOut) { Icon(Icons.Default.Logout,contentDescription="Cerrar sesión",tint=HoneyStyle.Muted) }
-                        IconButton(onClick={productTourStep=0;showProductTour=true}) { Icon(Icons.Default.Info,contentDescription="Recorrido de HoneyPhone",tint=HoneyStyle.Muted) }
-                        Spacer(Modifier.width(8.dp))
-                    },
                     colors=TopAppBarDefaults.topAppBarColors(containerColor=HoneyStyle.Background.copy(alpha=0.96f)),
                 )
             },
             bottomBar={
-                NavigationBar(containerColor=HoneyStyle.Background.copy(alpha=0.98f), tonalElevation=0.dp,
-                    modifier=Modifier.border(BorderStroke(1.dp,HoneyStyle.Line.copy(alpha=0.5f)))) {
-                    listOf(Triple("Red Wi-Fi",Icons.Default.Wifi,AppDestination.HOME),
-                        Triple("Señuelo",Icons.Default.Security,AppDestination.HONEYPOT),
-                        Triple("Actividad",Icons.Default.History,AppDestination.HISTORY),
-                        Triple("Ajustes",Icons.Default.Settings,AppDestination.SETTINGS)).forEach { (label,icon,destination) ->
-                        val selected=state.activeTab==destination
-                        NavigationBarItem(selected=selected,onClick={
-                            when(destination) {
-                                AppDestination.HISTORY -> viewModel.openHistory()
-                                AppDestination.HONEYPOT -> viewModel.openHoneypot()
-                                AppDestination.SETTINGS -> viewModel.openSettings()
-                                else -> viewModel.openHome()
+                Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal=14.dp,vertical=7.dp)) {
+                    Surface(
+                        modifier=Modifier.fillMaxWidth(),
+                        shape=RoundedCornerShape(24.dp),
+                        color=HoneyStyle.Surface.copy(alpha=0.98f),
+                        border=BorderStroke(1.dp,HoneyStyle.Line),
+                        shadowElevation=16.dp,
+                    ) {
+                        Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal=4.dp,vertical=5.dp),
+                            verticalAlignment=Alignment.CenterVertically) {
+                            listOf("Wi-Fi" to AppDestination.HOME,"Señuelo" to AppDestination.HONEYPOT,
+                                "Actividad" to AppDestination.HISTORY,"Cuenta" to AppDestination.PROFILE).forEach { (label,destination) ->
+                                val selected=state.activeTab==destination
+                                Column(
+                                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(18.dp))
+                                        .clickable(role=Role.Tab) {
+                                            when(destination) {
+                                                AppDestination.HISTORY -> viewModel.openHistory()
+                                                AppDestination.HONEYPOT -> viewModel.openHoneypot()
+                                                AppDestination.SETTINGS -> viewModel.openProfile()
+                                                AppDestination.PROFILE -> viewModel.openProfile()
+                                                else -> viewModel.openHome()
+                                            }
+                                        }.padding(horizontal=2.dp,vertical=2.dp),
+                                    horizontalAlignment=Alignment.CenterHorizontally,
+                                    verticalArrangement=Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(13.dp))
+                                        .background(if(selected)Color(0xFF242424) else Color.Transparent),
+                                        contentAlignment=Alignment.Center) {
+                                        HoneyPhoneNavGlyph(destination,selected)
+                                    }
+                                    Text(label,maxLines=1,fontSize=9.sp,lineHeight=11.sp,
+                                        color=if(selected)HoneyStyle.Ink else HoneyStyle.Muted,
+                                        fontWeight=if(selected)FontWeight.SemiBold else FontWeight.Normal)
+                                }
                             }
-                        },icon={Icon(icon,contentDescription=null)},label={Text(label,maxLines=1,fontSize=10.sp)},
-                            colors=NavigationBarItemDefaults.colors(selectedIconColor=HoneyStyle.Lime,
-                                selectedTextColor=HoneyStyle.Lime, indicatorColor=HoneyStyle.Lime.copy(alpha=0.1f),
-                                unselectedIconColor=HoneyStyle.Muted,unselectedTextColor=HoneyStyle.Muted))
+                        }
                     }
                 }
             }
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                screenStateHolder.SaveableStateProvider(state.destination.name) { when(state.destination) {
-                    AppDestination.HOME -> HomeScreen(state.networkLabelDraft,state.history,state.review,viewModel::setNetworkLabel,viewModel::openLivePreview,viewModel::openDemoGallery,viewModel::openHistoryReview,viewModel::syncCurrent,viewModel::exportCurrent,state.message)
+                AnimatedContent(
+                    targetState=state.destination,
+                    transitionSpec={
+                        (fadeIn(tween(220))+slideInHorizontally(tween(220)){it/12}) togetherWith
+                            (fadeOut(tween(160))+slideOutHorizontally(tween(160)){-it/12})
+                    },
+                    label="honeyphone-screen-transition",
+                ) { destination -> screenStateHolder.SaveableStateProvider(destination.name) { when(destination) {
+                    AppDestination.HOME -> HomeScreen(state.networkLabelDraft,state.history,state.review,state.wifiConnected,viewModel::setNetworkLabel,viewModel::openLivePreview,viewModel::openDemoGallery,viewModel::openHistoryReview,viewModel::syncCurrent,viewModel::exportCurrent,state.message,
+                        tourTarget=PRODUCT_TOUR_STEPS.getOrNull(productTourStep)?.target,onTourBounds={productTourBounds=it})
                     AppDestination.LIVE_REVIEW -> LiveScreen(state.working,state.message,viewModel::cancelReview)
-                    AppDestination.DEMO_GALLERY -> DemoScreen(state.scenarios,viewModel::openDemo)
+                    AppDestination.DEMO_GALLERY -> DemoScreen(state.scenarios,viewModel::openDemo,
+                        tourTarget=PRODUCT_TOUR_STEPS.getOrNull(productTourStep)?.target,onTourBounds={productTourBounds=it})
                     AppDestination.RESULT -> {
                         state.review?.let {
                             ResultScreen(it,state.localSaved,state.working,state.message,
@@ -166,108 +234,60 @@ fun HoneyPhoneApp(viewModel: HoneyPhoneViewModel) {
                             SignalDetailsSheet(signal,Modifier.navigationBarsPadding())
                         } }
                     }
-                    AppDestination.HISTORY -> ActivityScreen(state.history,state.honeypotEvents,state.honeypotSessions,state.remoteHoneypotEvents,state.selectedHoneypotSessionId,state.honeypotRemoteMessage,state.working,state.message,viewModel::refreshHistory,viewModel::refreshHoneypotSessions,viewModel::clearHoneypotEvents,viewModel::openHistoryReview)
+                    AppDestination.HISTORY -> ActivityScreen(state.history,state.honeypotEvents,state.honeypotSessions,state.remoteHoneypotEvents,state.selectedHoneypotSessionId,state.honeypotRemoteMessage,state.working,state.message,viewModel::refreshHistory,viewModel::refreshHoneypotSessions,viewModel::clearHoneypotEvents,viewModel::openHistoryReview,viewModel::syncPendingReviews,viewModel::deletePendingLocalReviews,
+                        tourTarget=PRODUCT_TOUR_STEPS.getOrNull(productTourStep)?.target,onTourBounds={productTourBounds=it})
                     AppDestination.HONEYPOT -> HoneypotHomeScreen(state.honeypotStatus,state.honeypotEvents,state.wifiConnected,
                         state.selectedHoneypotProfile,viewModel::selectHoneypotProfile,
-                        viewModel::startHoneypot,viewModel::stopHoneypot,viewModel::clearHoneypotEvents)
-                    AppDestination.SETTINGS -> SystemScreen(state.devices,state.deviceNameDraft,state.deviceMessage,state.currentInstallationId,state.apiConnection,viewModel::setDeviceName,viewModel::saveDeviceName,viewModel::revokeDevice,viewModel::refreshDevices,viewModel::refreshApiStatus,viewModel::openDemoGallery)
+                        viewModel::startHoneypot,viewModel::stopHoneypot,viewModel::clearHoneypotEvents,
+                        onToast={transientMessage=it},tourTarget=PRODUCT_TOUR_STEPS.getOrNull(productTourStep)?.target,onTourBounds={productTourBounds=it})
+                    AppDestination.SETTINGS, AppDestination.PROFILE -> ProfileScreen(
+                        email=state.accountEmail,deleting=state.accountDeleteBusy,message=state.accountMessage,
+                        devices=state.devices,deviceName=state.deviceNameDraft,deviceMessage=state.deviceMessage,
+                        currentInstallationId=state.currentInstallationId,apiConnection=state.apiConnection,
+                        automaticScansEnabled=state.automaticWifiScansEnabled,
+                        onAutomaticScansChanged=viewModel::setAutomaticWifiScansEnabled,
+                        onDeviceName=viewModel::setDeviceName,onSaveDevice=viewModel::saveDeviceName,onRevokeDevice=viewModel::revokeDevice,
+                        onRefreshDevices=viewModel::refreshDevices,onRefreshApi=viewModel::refreshApiStatus,onDemos=viewModel::openDemoGallery,
+                        onTour={productTourStep=0;showProductTour=true},onSignOut=viewModel::signOut,onDeleteAccount=viewModel::deleteAccount,
+                        tourTarget=PRODUCT_TOUR_STEPS.getOrNull(productTourStep)?.target,onTourBounds={productTourBounds=it})
                 } }
+                }
             }
         }
         }
-        if(showProductTour && state.authenticated) ModalBottomSheet(onDismissRequest={
-            showProductTour=false
-            context.getSharedPreferences("honeyphone_ui",Context.MODE_PRIVATE).edit().putBoolean("product_tour_completed",true).apply()
-        },containerColor=HoneyStyle.Surface) {
-            ProductTourSheet(
-                step=productTourStep,
-                onPrevious={productTourStep=(productTourStep-1).coerceAtLeast(0)},
-                onNext={productTourStep=(productTourStep+1).coerceAtMost(PRODUCT_TOUR_STEPS.lastIndex)},
-                onFinish={
-                    showProductTour=false
-                    context.getSharedPreferences("honeyphone_ui",Context.MODE_PRIVATE).edit().putBoolean("product_tour_completed",true).apply()
-                },
-                modifier=Modifier.navigationBarsPadding(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AccountGate(
-    busy:Boolean,
-    message:String?,
-    apiConfigured:Boolean,
-    googleConfigured:Boolean,
-    onSubmit:(String,String,Boolean)->Unit,
-    onGoogleToken:(String)->Unit,
-) {
-    val context= LocalContext.current
-    val scope= rememberCoroutineScope()
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var createAccount by rememberSaveable { mutableStateOf(false) }
-    var googleMessage by remember { mutableStateOf<String?>(null) }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=24.dp, vertical=30.dp),
-        verticalArrangement=Arrangement.Center,
-        horizontalAlignment=Alignment.CenterHorizontally,
-    ) {
-        Image(painterResource(R.drawable.ic_honeyphone),contentDescription=null,modifier=Modifier.size(74.dp))
-        Spacer(Modifier.height(18.dp))
-        Text("HoneyPhone",style=MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(8.dp))
-        Text(if(createAccount) "Crea tu cuenta privada" else "Inicia sesión en tu cuenta",style=MaterialTheme.typography.titleMedium,color=HoneyStyle.Muted)
-        Spacer(Modifier.height(28.dp))
-        Glass(accent=HoneyStyle.Line) {
-            OutlinedTextField(email,{email=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
-                label={Text("Correo electrónico")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),enabled=!busy)
-            OutlinedTextField(password,{password=it},modifier=Modifier.fillMaxWidth(),singleLine=true,
-                label={Text("Contraseña")},visualTransformation=PasswordVisualTransformation(),
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),enabled=!busy)
-            if(createAccount) Text("Usa al menos 10 caracteres. Tus revisiones y sesiones quedarán asociadas a esta cuenta.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-            if(!apiConfigured) Text("La dirección HTTPS de la API todavía no está configurada en esta compilación.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
-            if(!message.isNullOrBlank()) Text(message,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
-            if(!googleMessage.isNullOrBlank()) Text(googleMessage!!,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Warning)
-            PrimaryAction(if(createAccount) "Crear cuenta" else "Iniciar sesión",enabled=!busy&&apiConfigured&&email.contains("@")&&password.length>=10) {
-                onSubmit(email,password,createAccount)
+        if(showProductTour && state.authenticated) ProductTourOverlay(
+            step=productTourStep,
+            targetBounds=productTourBounds,
+            onPrevious={productTourStep=(productTourStep-1).coerceAtLeast(0)},
+            onNext={productTourStep=(productTourStep+1).coerceAtMost(PRODUCT_TOUR_STEPS.lastIndex)},
+            onFinish={
+                showProductTour=false
+                context.getSharedPreferences("honeyphone_ui",Context.MODE_PRIVATE).edit().putBoolean("product_tour_completed",true).apply()
+            },
+        )
+        AnimatedVisibility(
+            visible=transientMessage!=null,
+            modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=104.dp).padding(horizontal=20.dp),
+            enter=fadeIn()+slideInVertically { it/3 },
+            exit=fadeOut()+slideOutVertically { it/3 },
+        ) {
+            Surface(shape=RoundedCornerShape(18.dp),color=HoneyStyle.Surface,
+                border=BorderStroke(1.dp,HoneyStyle.Line),shadowElevation=12.dp) {
+                Row(Modifier.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(HoneyStyle.Amber))
+                    Text(transientMessage.orEmpty(),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Ink)
+                }
             }
-            TextButton(onClick={createAccount=!createAccount;googleMessage=null},enabled=!busy,modifier=Modifier.fillMaxWidth()) {
-                Text(if(createAccount) "Ya tengo una cuenta" else "Crear una cuenta nueva",color=HoneyStyle.Ink)
-            }
-            HorizontalDivider(color=HoneyStyle.Line)
-            OutlinedButton(
-                onClick={
-                    googleMessage=null
-                    scope.launch {
-                        try {
-                            val option=GetGoogleIdOption.Builder()
-                                .setFilterByAuthorizedAccounts(false)
-                                .setServerClientId(dev.honeyphone.app.BuildConfig.GOOGLE_SERVER_CLIENT_ID)
-                                .setAutoSelectEnabled(false)
-                                .build()
-                            val request=GetCredentialRequest.Builder().addCredentialOption(option).build()
-                            val result=CredentialManager.create(context).getCredential(context,request)
-                            val credential=result.credential as? CustomCredential
-                                ?: throw IllegalStateException("Google no devolvió una credencial compatible.")
-                            if(credential.type!=GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) throw IllegalStateException("Google no devolvió un token de acceso.")
-                            onGoogleToken(GoogleIdTokenCredential.createFrom(credential.data).idToken)
-                        } catch(e:Exception) {
-                            googleMessage=e.localizedMessage?.take(160) ?: "No se pudo iniciar sesión con Google."
-                        }
-                    }
-                },
-                enabled=!busy&&apiConfigured&&googleConfigured,
-                modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),
-                shape=RoundedCornerShape(16.dp),
-                border=BorderStroke(1.dp,HoneyStyle.Line),
-                colors=ButtonDefaults.outlinedButtonColors(contentColor=HoneyStyle.Ink),
-            ) { Text("Continuar con Google") }
-            if(!googleConfigured) Text("Google requiere configurar el cliente OAuth de tipo Web.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-            if(busy) LinearProgressIndicator(Modifier.fillMaxWidth(),color=HoneyStyle.Lime)
         }
-        Spacer(Modifier.height(14.dp))
-        Text("Al continuar, HoneyPhone guarda tus datos bajo tu cuenta.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        AnimatedVisibility(
+            visible=showStartupAnimation,
+            modifier=Modifier.fillMaxSize(),
+            enter=fadeIn(animationSpec=tween(120)),
+            exit=fadeOut(animationSpec=tween(300)),
+        ) {
+            StartupAnimationOverlay(onAnimationStarted={startupAnimationStarted=true})
+        }
     }
 }
 
@@ -303,14 +323,12 @@ private fun Eyebrow(text: String,color: Color=HoneyStyle.Lime) {
     Text(text,style=MaterialTheme.typography.labelMedium,color=color,letterSpacing=0.5.sp)
 }
 @Composable
-private fun Heading(label: String,title: String) {
-    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Eyebrow(label);Text(title,style=MaterialTheme.typography.headlineMedium)
-    }
+private fun Heading(title: String) {
+    Text(title,style=MaterialTheme.typography.headlineMedium)
 }
 @Composable
-private fun PrimaryAction(text: String,enabled: Boolean=true,onClick: ()->Unit) {
-    Button(onClick=onClick,enabled=enabled,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),
+private fun PrimaryAction(text: String,enabled: Boolean=true,modifier:Modifier=Modifier,onClick: ()->Unit) {
+    Button(onClick=onClick,enabled=enabled,modifier=modifier.fillMaxWidth().heightIn(min=54.dp),
         shape=RoundedCornerShape(16.dp),contentPadding=PaddingValues(horizontal=18.dp,vertical=14.dp)) {
         Text(text,modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelLarge)
         Spacer(Modifier.width(8.dp));Icon(Icons.AutoMirrored.Filled.ArrowForward,null,Modifier.size(20.dp))
@@ -329,7 +347,7 @@ private fun SecondaryAction(text: String,enabled: Boolean=true,icon: ImageVector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:ReviewPresentation?,onLabel:(String)->Unit,onLive: ()->Unit,onDemo: ()->Unit,onOpenReview:(String)->Unit,onSync:()->Unit,onExport:()->Unit,message:String?) {
+private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:ReviewPresentation?,wifiConnected:Boolean,onLabel:(String)->Unit,onLive: ()->Unit,onDemo: ()->Unit,onOpenReview:(String)->Unit,onSync:()->Unit,onExport:()->Unit,message:String?,tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit) {
     var selectedSignal by remember { mutableStateOf<SignalPresentation?>(null) }
     var showIndicators by rememberSaveable { mutableStateOf(false) }
     val latest=history.filter { it.source==ReviewSource.LIVE }.maxByOrNull { it.createdAt }
@@ -337,10 +355,7 @@ private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:Revie
     val latestReview=review?.takeIf { it.source==ReviewSource.LIVE && it.checkId==latest?.checkId }
     val signals=latestReview?.signals?.associateBy { it.kind }.orEmpty()
     Page {
-        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Eyebrow("Red / lectura real",HoneyStyle.Muted)
-            Text("Red Wi-Fi",style=MaterialTheme.typography.headlineSmall)
-        }
+        Text("Red Wi-Fi",style=MaterialTheme.typography.headlineSmall)
         Glass(accent=HoneyStyle.Line) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
                 Text(metrics?.rssiDbm?.let { "$it" } ?: "—",fontFamily=HoneyStyle.Dots,fontWeight=FontWeight.Bold,fontSize=58.sp,lineHeight=64.sp,color=HoneyStyle.Ink)
@@ -357,13 +372,39 @@ private fun HomeScreen(label:String,history:List<ReviewHistoryItem>,review:Revie
             MetricChip("Acceso a Internet",when(metrics?.internetValidated){true->"Disponible";false->"Sin validar";null->"Aún sin revisar"},Modifier.fillMaxWidth())
             OutlinedTextField(value=label,onValueChange=onLabel,modifier=Modifier.fillMaxWidth(),singleLine=true,
                 label={Text("Etiqueta opcional")},placeholder={Text("Ej. Sala A")},isError=!validManualLabel(label))
-            PrimaryAction("Escanear red",enabled=validManualLabel(label),onClick=onLive)
+            PrimaryAction("Escanear red",enabled=wifiConnected&&validManualLabel(label),onClick=onLive,
+                modifier=productTourAnchor(tourTarget==ProductTourTarget.WIFI_SCAN,onTourBounds))
+            Text(if(wifiConnected)"La revisión empieza cuando la solicitas." else "Conecta a una red Wi‑Fi para escanear; los datos móviles solos no cuentan como lectura.",
+                style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Eyebrow("Última revisión",HoneyStyle.Muted)
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                latest?.let { TextButton(onClick={onOpenReview(it.checkId)}) { Text("Ver informe") } }
-                TextButton(onClick={showIndicators=!showIndicators}) { Text(if(showIndicators)"Ocultar señales" else "Ver señales") }
+        Eyebrow("Última revisión",HoneyStyle.Muted)
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            latest?.let { item ->
+                OutlinedButton(
+                    onClick={onOpenReview(item.checkId)},
+                    modifier=Modifier.weight(1f).heightIn(min=48.dp),
+                    shape=RoundedCornerShape(14.dp),
+                    border=BorderStroke(1.dp,HoneyStyle.Line),
+                    colors=ButtonDefaults.outlinedButtonColors(contentColor=HoneyStyle.Ink),
+                    contentPadding=PaddingValues(horizontal=10.dp,vertical=8.dp),
+                ) {
+                    Text("Ver informe",modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward,null,Modifier.size(16.dp))
+                }
+            }
+            OutlinedButton(
+                onClick={showIndicators=!showIndicators},
+                enabled=latest!=null,
+                modifier=Modifier.weight(1f).heightIn(min=48.dp),
+                shape=RoundedCornerShape(14.dp),
+                border=BorderStroke(1.dp,HoneyStyle.Line),
+                colors=ButtonDefaults.outlinedButtonColors(contentColor=HoneyStyle.Ink),
+                contentPadding=PaddingValues(horizontal=10.dp,vertical=8.dp),
+            ) {
+                Icon(if(showIndicators)Icons.Default.VisibilityOff else Icons.Default.Visibility,null,Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if(showIndicators)"Ocultar señales" else "Ver señales",modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
             }
         }
         if(showIndicators) Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -415,7 +456,7 @@ private fun SignalGridCell(kind:SignalKind,signal:SignalPresentation?,modifier:M
 @Composable
 private fun LiveScreen(working: Boolean,message: String?,onCancel:()->Unit) {
     Page {
-        Heading("Lectura de tu red",if(working)"Consultando la conexión…" else "No se completó la lectura")
+        Heading(if(working)"Consultando la conexión…" else "No se completó la lectura")
         if(working) LinearProgressIndicator(Modifier.fillMaxWidth(),color=HoneyStyle.Lime,trackColor=HoneyStyle.Line)
         InfoStrip("Qué estamos leyendo",message ?: "Datos disponibles del Wi-Fi activo. La revisión se guardará en este teléfono.")
         InfoStrip("Pruebas de referencia",if(dev.honeyphone.app.core.network.ProbeConfig.load()==null)"Las pruebas de resolución de nombres y conexión segura todavía no están activas. El equipo del proyecto debe definir un destino propio; no indica un problema de tu Wi-Fi." else "Las pruebas de resolución de nombres y conexión segura consultan destinos del proyecto con límites de tiempo. Si cambia la red, se descartan los datos.",HoneyStyle.Muted)
@@ -424,12 +465,12 @@ private fun LiveScreen(working: Boolean,message: String?,onCancel:()->Unit) {
 }
 
 @Composable
-private fun DemoScreen(scenarios: List<DemoScenario>,onOpen: (String)->Unit) {
+private fun DemoScreen(scenarios: List<DemoScenario>,onOpen: (String)->Unit,tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit) {
     Page {
-        Heading("Ejemplos guiados","Aprende a leer los resultados")
+        Heading("Aprende a leer los resultados")
         Text("Son ejemplos simulados. No describen tu conexión ni se guardan hasta que tú lo pidas.",color=HoneyStyle.Muted,style=MaterialTheme.typography.bodyMedium)
         scenarios.forEachIndexed { i,scenario ->
-            Glass(Modifier.clickable(role=Role.Button){onOpen(scenario.checkId)}) {
+            Glass(productTourAnchor(tourTarget==ProductTourTarget.DEMO_SAMPLE&&i==0,onTourBounds).clickable(role=Role.Button){onOpen(scenario.checkId)}) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                     Text("0"+(i+1),fontFamily=HoneyStyle.Dots,fontSize=36.sp,color=HoneyStyle.Lime)
                     StatusPill("Simulación",HoneyStyle.Amber)
@@ -453,7 +494,7 @@ private fun ResultScreen(review: ReviewPresentation,localSaved: Boolean,working:
     val available=review.signals.count{it.outcome==SignalOutcome.PASS || it.outcome==SignalOutcome.ATTENTION}
     val rssi=if(!demo)review.wifiMetrics?.rssiDbm else null
     val synced=syncStatus.substringBefore(":").equals("synced",true)
-    if(confirmDelete) AlertDialog(onDismissRequest={confirmDelete=false},
+    if(confirmDelete) HoneyAlertDialog(onDismissRequest={confirmDelete=false},
         title={Text("¿Eliminar esta revisión?")},
         text={Text("Se borrará del teléfono y, si fue enviada, también del servidor. Esta acción no se puede deshacer.")},
         confirmButton={TextButton(onClick={confirmDelete=false;onDelete()}){Text("Eliminar revisión",color=MaterialTheme.colorScheme.error)}},
@@ -488,10 +529,10 @@ private fun ResultScreen(review: ReviewPresentation,localSaved: Boolean,working:
                 Text(if(localSaved)"Guardada en este teléfono" else "Ejemplo sin guardar",style=MaterialTheme.typography.titleMedium)
             }
             Text(if(localSaved)"Puedes volver a esta revisión desde Historial." else "Guárdalo si quieres probar el envío o exportarlo.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-            if(!localSaved&&demo) PrimaryAction("Guardar este ejemplo",!working,onSave)
+            if(!localSaved&&demo) PrimaryAction("Guardar este ejemplo",enabled=!working,onClick=onSave)
             else {
                 StatusPill(syncLabel(syncStatus),syncColor(syncStatus))
-                PrimaryAction(if(working)"Procesando…" else if(synced)"Volver a enviar al servidor" else "Enviar al servidor",!working,onSync)
+                PrimaryAction(if(working)"Procesando…" else if(synced)"Volver a enviar al servidor" else "Enviar al servidor",enabled=!working,onClick=onSync)
                 Text("Solo se envía esta revisión cuando pulsas el botón.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
                 SecondaryAction("Compartir archivo de revisión",!working,Icons.Default.Share,onExport)
                 Text("El archivo incluye esta revisión y los resultados de sus indicadores.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
@@ -535,29 +576,130 @@ private fun SignalDetailsSheet(signal:SignalPresentation,modifier:Modifier=Modif
 }
 
 @Composable
+private fun activityFilterChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor=HoneyStyle.Surface,
+    selectedContainerColor=Color(0xFF292929),
+    labelColor=HoneyStyle.Muted,
+    selectedLabelColor=HoneyStyle.Ink,
+)
+
+private data class HoneypotMetricEvent(
+    val id:String,
+    val occurredAt:Long,
+    val method:String,
+    val responseCode:Int,
+)
+
+@Composable
 private fun ActivityScreen(
     wifiItems:List<ReviewHistoryItem>,localEvents:List<HoneypotEvent>,sessions:List<HoneypotSessionInfo>,remoteEvents:List<HoneypotRemoteEvent>,selectedSession:String?,remoteMessage:String?,working:Boolean,message:String?,
-    onRefreshWifi:()->Unit,onRefreshHttp:(String?)->Unit,onClearHttp:()->Unit,onOpenWifi:(String)->Unit,
+    onRefreshWifi:()->Unit,onRefreshHttp:(String?)->Unit,onClearHttp:()->Unit,onOpenWifi:(String)->Unit,onSyncPending:(List<String>)->Unit,onDeletePending:(List<String>)->Unit,
+    tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit,
 ) {
     var section by remember { mutableStateOf("WIFI") }
     var labelFilter by remember { mutableStateOf<String?>(null) }
     var sourceFilter by remember { mutableStateOf("LIVE") }
+    var confirmDeletePending by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteIds by remember { mutableStateOf(emptyList<String>()) }
+    var pendingDeleteScope by rememberSaveable { mutableStateOf("revisiones") }
     val liveItems=wifiItems.filter { it.source==ReviewSource.LIVE }.sortedByDescending { it.createdAt }
     val latest=when(sourceFilter){"DEMO"->wifiItems.filter { it.source==ReviewSource.DEMO }.sortedByDescending { it.createdAt };"ALL"->wifiItems.sortedByDescending { it.createdAt };else->liveItems}
     val filtered=latest.filter { labelFilter==null || it.networkLabel.orEmpty()==labelFilter }
+    val chartItems=filtered.filter { it.source==ReviewSource.LIVE }.sortedByDescending { it.createdAt }.take(12)
+    val pendingItems=latest.filter { it.syncStatus.substringBefore(":").lowercase() in setOf("pending","failed") }
+    val syncingCount=latest.count { it.syncStatus.substringBefore(":").equals("syncing",ignoreCase=true) }
+    val pendingScope=when(sourceFilter) {
+        "LIVE" -> "lecturas reales"
+        "DEMO" -> "simulaciones"
+        else -> "lecturas reales y simulaciones"
+    }
+    val visibleLocalEvents=remember(localEvents,selectedSession) {
+        if(selectedSession==null) localEvents else localEvents.filter { it.sessionId==selectedSession }
+    }
+    val visibleRemoteEvents=remember(visibleLocalEvents,remoteEvents) {
+        val localIds=visibleLocalEvents.mapTo(mutableSetOf()) { it.id }
+        remoteEvents.filterNot { it.eventId in localIds }
+    }
+    val honeypotMetricEvents=remember(visibleLocalEvents,remoteEvents) {
+        (visibleLocalEvents.map { HoneypotMetricEvent(it.id,it.occurredAt,it.method,it.responseCode) }+
+            remoteEvents.map { HoneypotMetricEvent(it.eventId,it.occurredAt,it.method,it.responseCode) })
+            .distinctBy { it.id }
+            .sortedBy { it.occurredAt }
+    }
+    val allHoneypotEventCount=remember(localEvents,remoteEvents) {
+        (localEvents.map { it.id }+remoteEvents.map { it.eventId }).distinct().size
+    }
+    val honeypotSourceNote=when {
+        visibleLocalEvents.isNotEmpty()&&remoteEvents.isNotEmpty() -> "Datos del teléfono y del servidor; los eventos repetidos se cuentan una sola vez."
+        visibleLocalEvents.isNotEmpty() -> "Eventos guardados localmente en este teléfono."
+        remoteEvents.isNotEmpty() -> "Eventos consultados en el servidor."
+        else -> ""
+    }
+    if(confirmDeletePending) HoneyAlertDialog(
+        onDismissRequest={confirmDeletePending=false},
+        title={Text("¿Eliminar estos pendientes?")},
+        text={Text("Se borrarán ${pendingDeleteIds.size} ${pendingDeleteScope} guardadas solo en este teléfono, junto con sus señales. Lo que ya se envió al servidor se conserva. Esta acción no se puede deshacer.")},
+        confirmButton={TextButton(onClick={confirmDeletePending=false;onDeletePending(pendingDeleteIds)}){Text("Eliminar del teléfono",color=MaterialTheme.colorScheme.error)}},
+        dismissButton={TextButton(onClick={confirmDeletePending=false}){Text("Cancelar")}},
+    )
     Page {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Eyebrow("Historial de actividad",HoneyStyle.Muted); Text("Actividad",style=MaterialTheme.typography.headlineMedium) }
-            Text("${wifiItems.size+sessions.size+localEvents.size+remoteEvents.size}",fontFamily=HoneyStyle.Dots,style=MaterialTheme.typography.headlineSmall,color=HoneyStyle.Ink)
+            Column(Modifier.weight(1f)) { Text("Actividad",style=MaterialTheme.typography.headlineMedium) }
+            Text("${wifiItems.size+sessions.size+allHoneypotEventCount}",fontFamily=HoneyStyle.Dots,style=MaterialTheme.typography.headlineSmall,color=HoneyStyle.Ink)
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected=section=="WIFI",onClick={section="WIFI"},label={Text("Señal Wi-Fi")})
-            FilterChip(selected=section=="HTTP",onClick={section="HTTP"},label={Text("Sesiones del señuelo")})
+        Row(Modifier.then(productTourAnchor(tourTarget==ProductTourTarget.ACTIVITY_SECTIONS,onTourBounds)).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected=section=="WIFI",onClick={section="WIFI"},label={Text("Señal Wi-Fi")},colors=activityFilterChipColors())
+            FilterChip(selected=section=="HTTP",onClick={section="HTTP"},label={Text("Sesiones del señuelo")},colors=activityFilterChipColors())
         }
         if(section=="WIFI") {
             Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 listOf("LIVE" to "Lecturas reales","DEMO" to "Simulaciones","ALL" to "Todas").forEach { (value,label)->
-                    FilterChip(selected=sourceFilter==value,onClick={sourceFilter=value},label={Text(label)})
+                    FilterChip(selected=sourceFilter==value,onClick={sourceFilter=value},label={Text(label)},colors=activityFilterChipColors())
+                }
+            }
+            if(sourceFilter=="DEMO") InfoStrip(
+                "¿Para qué sirven las simulaciones?",
+                "Son ejemplos ficticios que guardaste desde la galería. Sirven para practicar cómo interpretar los resultados; no son lecturas de este teléfono ni comprueban tu Wi-Fi."
+            ,HoneyStyle.Amber)
+            if(pendingItems.isNotEmpty()||syncingCount>0) {
+                Surface(shape=RoundedCornerShape(12.dp),color=HoneyStyle.Surface,border=BorderStroke(1.dp,HoneyStyle.Line)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    when(sourceFilter) {
+                                        "LIVE" -> "Lecturas reales sin enviar"
+                                        "DEMO" -> "Simulaciones sin enviar"
+                                        else -> "Pendientes de ambas pestañas"
+                                    },
+                                    style=MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    if(pendingItems.isNotEmpty()) "${pendingItems.size} guardadas solo en este teléfono"
+                                    else "No hay elementos en espera para enviar.",
+                                    style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted
+                                )
+                            }
+                            if(pendingItems.isNotEmpty()) StatusPill("${pendingItems.size} pendientes",HoneyStyle.Amber)
+                        }
+                        if(syncingCount>0) Text("$syncingCount ${if(syncingCount==1)"envío está" else "envíos están"} en curso.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                        if(pendingItems.isNotEmpty()) Text(
+                            if(sourceFilter=="ALL") "Se aplicará a lecturas reales y simulaciones pendientes."
+                            else "Se aplicará solo a las $pendingScope pendientes.",
+                            style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted
+                        )
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick={onSyncPending(pendingItems.map { it.checkId })},enabled=!working&&pendingItems.isNotEmpty(),modifier=Modifier.weight(1f),
+                                contentPadding=PaddingValues(horizontal=8.dp,vertical=8.dp)
+                            ) { Icon(Icons.Default.CloudUpload,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Enviar estas",maxLines=1,overflow=TextOverflow.Ellipsis) }
+                            OutlinedButton(
+                                onClick={pendingDeleteIds=pendingItems.map { it.checkId };pendingDeleteScope=pendingScope;confirmDeletePending=true},enabled=!working&&pendingItems.isNotEmpty(),modifier=Modifier.weight(1f),
+                                contentPadding=PaddingValues(horizontal=8.dp,vertical=8.dp),
+                                colors=ButtonDefaults.outlinedButtonColors(contentColor=MaterialTheme.colorScheme.error)
+                            ) { Icon(Icons.Default.DeleteOutline,null,Modifier.size(17.dp));Spacer(Modifier.width(5.dp));Text("Eliminar estas",maxLines=1,overflow=TextOverflow.Ellipsis) }
+                        }
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
@@ -568,20 +710,27 @@ private fun ActivityScreen(
             message?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted) }
             if(latest.mapNotNull { it.networkLabel }.distinct().isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected=labelFilter==null,onClick={labelFilter=null},label={Text("Todas")})
-                    latest.mapNotNull { it.networkLabel }.distinct().forEach { label -> FilterChip(selected=labelFilter==label,onClick={labelFilter=label},label={Text(label,maxLines=1)}) }
+                    FilterChip(selected=labelFilter==null,onClick={labelFilter=null},label={Text("Todas")},colors=activityFilterChipColors())
+                    latest.mapNotNull { it.networkLabel }.distinct().forEach { label -> FilterChip(selected=labelFilter==label,onClick={labelFilter=label},label={Text(label,maxLines=1)},colors=activityFilterChipColors()) }
                 }
             }
-            if(sourceFilter!="DEMO"&&liveItems.size>1) {
-                val newest=liveItems[0].wifiMetrics?.rssiDbm; val previous=liveItems[1].wifiMetrics?.rssiDbm
+            val signalItems=chartItems.filter { it.wifiMetrics?.rssiDbm!=null }
+            val signalReadings=signalItems.mapNotNull { it.wifiMetrics?.rssiDbm }
+            if(sourceFilter!="DEMO"&&signalReadings.size>1) {
+                val newest=signalItems.firstOrNull()?.wifiMetrics?.rssiDbm
+                val previous=signalItems.getOrNull(1)?.wifiMetrics?.rssiDbm
                 val delta=if(newest!=null&&previous!=null) newest-previous else null
                 Glass {
                     Text("Cambio reciente",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
                     Text(delta?.let { if(it>0)"+$it dB" else "$it dB" } ?: "Sin comparación",fontFamily=HoneyStyle.Dots,style=MaterialTheme.typography.headlineSmall)
-                    SignalSparkline(liveItems.take(12).mapNotNull { it.wifiMetrics?.rssiDbm })
+                    SignalSparkline(signalReadings)
                 }
             }
-            if(filtered.isEmpty()) Text("Las comprobaciones aparecerán aquí cuando escanees la red.",style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted)
+            if(filtered.isEmpty()) Text(
+                if(sourceFilter=="DEMO") "Los ejemplos guardados desde la galería aparecerán aquí."
+                else "Las comprobaciones aparecerán aquí cuando escanees la red.",
+                style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted
+            )
             filtered.forEach { item ->
                 Surface(Modifier.fillMaxWidth().clickable { onOpenWifi(item.checkId) },shape=RoundedCornerShape(8.dp),color=HoneyStyle.Surface,border=BorderStroke(1.dp,HoneyStyle.Line)) {
                     Row(Modifier.fillMaxWidth().padding(14.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -596,27 +745,113 @@ private fun ActivityScreen(
             }
         } else {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                Text("${sessions.size} sesiones · ${localEvents.size} solicitudes en el teléfono",modifier=Modifier.weight(1f).padding(end=8.dp),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted,maxLines=2,overflow=TextOverflow.Ellipsis)
+                Text("${sessions.size} sesiones · ${visibleLocalEvents.size} solicitudes en el teléfono",modifier=Modifier.weight(1f).padding(end=8.dp),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted,maxLines=2,overflow=TextOverflow.Ellipsis)
                 Row {
                     if(localEvents.isNotEmpty()) TextButton(onClick=onClearHttp){Text("Borrar")}
                     TextButton(onClick={onRefreshHttp(selectedSession)}){Text("Actualizar")}
                 }
             }
+            Text("Los eventos se intentan enviar automáticamente. Actualizar también reintenta los que sigan guardados en el teléfono.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
             remoteMessage?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted) }
             if(sessions.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     sessions.forEach { session ->
-                        FilterChip(selected=session.sessionId==selectedSession,onClick={onRefreshHttp(session.sessionId)},label={Text("${honeypotSessionLabel(session.state)} · ${DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(session.startedAt))}")})
+                        FilterChip(selected=session.sessionId==selectedSession,onClick={onRefreshHttp(session.sessionId)},label={Text("${honeypotSessionLabel(session.state)} · ${DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(session.startedAt))}")},colors=activityFilterChipColors())
                     }
                 }
             }
-            localEvents.forEach { event ->
+            if(honeypotMetricEvents.isNotEmpty()) HoneypotMetricsPanel(honeypotMetricEvents,honeypotSourceNote)
+            visibleLocalEvents.forEach { event ->
                 ActivityEventRow(requestDescription(event.method,event.path),event.sourceAddress,userAgentLabel(event.userAgent),Date(event.occurredAt),event.responseCode,"En el teléfono",event.requestDetails,event.userAgent)
             }
-            remoteEvents.forEach { event ->
+            visibleRemoteEvents.forEach { event ->
                 ActivityEventRow(requestDescription(event.method,event.path),event.sourceIpMasked,event.userAgentFamily?.let(::userAgentLabel) ?: "Desconocido",Date(event.occurredAt),event.responseCode,"En el servidor")
             }
-            if(localEvents.isEmpty()&&remoteEvents.isEmpty()) Text("Las peticiones del señuelo aparecerán aquí cuando inicies una sesión.",style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted)
+            if(visibleLocalEvents.isEmpty()&&visibleRemoteEvents.isEmpty()) Text("Las peticiones del señuelo aparecerán aquí cuando inicies una sesión.",style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted)
+        }
+    }
+}
+
+@Composable
+private fun HoneypotMetricsPanel(events:List<HoneypotMetricEvent>,sourceNote:String) {
+    if(events.isEmpty()) return
+    val counts=remember(events) {
+        val buckets=MutableList(8) { 0 }
+        val first=events.first().occurredAt
+        val span=(events.last().occurredAt-first).coerceAtLeast(1L)
+        events.forEach { event ->
+            val bucket=(((event.occurredAt-first)*8)/span).toInt().coerceIn(0,7)
+            buckets[bucket]++
+        }
+        buckets
+    }
+    val responseCounts=remember(events) {
+        listOf(
+            "2xx" to events.count { it.responseCode in 200..299 },
+            "3xx" to events.count { it.responseCode in 300..399 },
+            "4xx" to events.count { it.responseCode in 400..499 },
+            "5xx" to events.count { it.responseCode in 500..599 },
+            "Otros" to events.count { it.responseCode !in 200..599 },
+        )
+    }
+    Glass {
+        Eyebrow("Métricas del honeypot",HoneyStyle.Aqua)
+        Text("${events.size} ${if(events.size==1)"evento único" else "eventos únicos"}",fontFamily=HoneyStyle.Dots,style=MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            MetricChip("GET",events.count { it.method.equals("GET",true) }.toString(),Modifier.weight(1f))
+            MetricChip("POST",events.count { it.method.equals("POST",true) }.toString(),Modifier.weight(1f))
+            MetricChip("Otros",events.count { !it.method.equals("GET",true)&&!it.method.equals("POST",true) }.toString(),Modifier.weight(1f))
+        }
+        Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+            Text("Solicitudes registradas",style=MaterialTheme.typography.titleSmall)
+            HoneypotTimelineChart(counts)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                Text("Más antigua",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
+                Text("Más reciente",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
+            }
+        }
+        Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+            Text("Respuestas HTTP",style=MaterialTheme.typography.titleSmall)
+            val maxCount=responseCounts.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
+            responseCounts.forEach { (label,count) ->
+                val color=when(label) {
+                    "2xx" -> HoneyStyle.Aqua
+                    "3xx" -> HoneyStyle.Lime
+                    "4xx" -> HoneyStyle.Amber
+                    "5xx" -> MaterialTheme.colorScheme.error
+                    else -> HoneyStyle.Muted
+                }
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text(label,modifier=Modifier.width(38.dp),style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
+                    BoxWithConstraints(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(8.dp)).background(HoneyStyle.Line)) {
+                        if(count>0) Box(Modifier.fillMaxWidth(count.toFloat()/maxCount).fillMaxHeight().background(color))
+                    }
+                    Text(count.toString(),modifier=Modifier.width(22.dp),fontFamily=HoneyStyle.Mono,style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Ink)
+                }
+            }
+        }
+        Text(sourceNote,style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
+    }
+}
+
+@Composable
+private fun HoneypotTimelineChart(counts:List<Int>) {
+    Canvas(Modifier.fillMaxWidth().height(86.dp)) {
+        if(counts.isEmpty()) return@Canvas
+        val maxCount=counts.maxOrNull()?.coerceAtLeast(1) ?: 1
+        val spacing=6.dp.toPx()
+        val barWidth=((size.width-spacing*(counts.size-1))/counts.size).coerceAtLeast(1f)
+        val minimumHeight=2.dp.toPx()
+        drawLine(HoneyStyle.Line,Offset(0f,size.height),Offset(size.width,size.height),1.dp.toPx())
+        counts.forEachIndexed { index,count ->
+            val height=(size.height*count/maxCount).coerceAtLeast(minimumHeight)
+            val left=index*(barWidth+spacing)
+            drawRoundRect(
+                color=HoneyStyle.Aqua.copy(alpha=if(count==0)0.16f else 0.9f),
+                topLeft=Offset(left,size.height-height),
+                size=Size(barWidth,height),
+                cornerRadius=CornerRadius(5.dp.toPx(),5.dp.toPx()),
+            )
         }
     }
 }
@@ -656,23 +891,22 @@ private fun SignalSparkline(values:List<Int>) {
 }
 
 @Composable
-private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessage:String?,currentInstallationId:String,apiConnection:ApiConnectionState,onDeviceName:(String)->Unit,onSaveDevice:()->Unit,onRevokeDevice:()->Unit,onRefreshDevices:()->Unit,onRefreshApi:()->Unit,onDemos:()->Unit) {
+private fun AccountSettingsContent(devices:List<DeviceInfo>,deviceName:String,deviceMessage:String?,currentInstallationId:String,apiConnection:ApiConnectionState,automaticScansEnabled:Boolean,onAutomaticScansChanged:(Boolean)->Unit,onDeviceName:(String)->Unit,onSaveDevice:()->Unit,onRevokeDevice:()->Unit,onRefreshDevices:()->Unit,onRefreshApi:()->Unit,onDemos:()->Unit,onTour:()->Unit,tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit) {
     val ownDevice=devices.firstOrNull { it.installationId==currentInstallationId }
     var confirmDisable by remember { mutableStateOf(false) }
     var showOtherDevices by rememberSaveable { mutableStateOf(false) }
-    var showAutomaticReviews by rememberSaveable { mutableStateOf(false) }
     var showProbeDetails by rememberSaveable { mutableStateOf(false) }
     var showApiDetails by rememberSaveable { mutableStateOf(false) }
-    if(confirmDisable) AlertDialog(onDismissRequest={confirmDisable=false},
+    if(confirmDisable) HoneyAlertDialog(onDismissRequest={confirmDisable=false},
         title={Text("¿Desactivar este teléfono?")},
         text={Text("Dejará de enviar revisiones y solicitudes nuevas. La información ya guardada no se elimina.")},
         confirmButton={TextButton(onClick={confirmDisable=false;onRevokeDevice()}){Text("Desactivar",color=MaterialTheme.colorScheme.error)}},
         dismissButton={TextButton(onClick={confirmDisable=false}){Text("Cancelar")}})
-    Page {
+    Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(18.dp)) {
         Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Eyebrow("Tu instalación y sus ajustes",HoneyStyle.Muted)
-            Text("Ajustes",style=MaterialTheme.typography.headlineMedium)
+            Text("Ajustes del dispositivo",style=MaterialTheme.typography.titleLarge)
         }
+        SecondaryAction("Recorrido interactivo",icon=Icons.Default.Explore,onClick=onTour)
         Glass {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 Eyebrow("Este dispositivo",HoneyStyle.Muted)
@@ -701,8 +935,20 @@ private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessag
                 }
             }
         }
-        SettingsDisclosure("Lecturas automáticas","Cada 15 minutos · pueden aplazarse para ahorrar batería",showAutomaticReviews,{showAutomaticReviews=!showAutomaticReviews}) {
-            Text("HoneyPhone intenta guardar una lectura cada 15 minutos. Android puede aplazarla para ahorrar batería; cuando no hay conexión, conserva la lectura en el teléfono y la envía al volver a conectarse.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+        Surface(
+            modifier=Modifier.then(productTourAnchor(tourTarget==ProductTourTarget.AUTOMATIC_SCANS,onTourBounds)).fillMaxWidth(),
+            shape=RoundedCornerShape(12.dp),color=HoneyStyle.Surface,border=BorderStroke(1.dp,HoneyStyle.Line),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.BatteryChargingFull,null,tint=HoneyStyle.Muted)
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Text("Escaneos automáticos",style=MaterialTheme.typography.titleMedium)
+                    Text(if(automaticScansEnabled)"Aprox. cada 15 min · Wi-Fi e Internet" else "Pausados · no se crean lecturas en segundo plano",
+                        style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                    Text("Puede consumir batería. Los datos móviles solos no activan un escaneo.",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
+                }
+                Switch(checked=automaticScansEnabled,onCheckedChange=onAutomaticScansChanged)
+            }
         }
         SettingsDisclosure("Pruebas con sitios de referencia",if(dev.honeyphone.app.core.network.ProbeConfig.load()==null)"Aún no están configuradas" else "Activas para los destinos del proyecto",showProbeDetails,{showProbeDetails=!showProbeDetails}) {
             if(dev.honeyphone.app.core.network.ProbeConfig.load()==null) {
@@ -722,6 +968,88 @@ private fun SystemScreen(devices:List<DeviceInfo>,deviceName:String,deviceMessag
 }
 
 @Composable
+private fun ProfileScreen(email:String?,deleting:Boolean,message:String?,devices:List<DeviceInfo>,deviceName:String,deviceMessage:String?,currentInstallationId:String,apiConnection:ApiConnectionState,automaticScansEnabled:Boolean,onAutomaticScansChanged:(Boolean)->Unit,onDeviceName:(String)->Unit,onSaveDevice:()->Unit,onRevokeDevice:()->Unit,onRefreshDevices:()->Unit,onRefreshApi:()->Unit,onDemos:()->Unit,onTour:()->Unit,onSignOut:()->Unit,onDeleteAccount:()->Unit,tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit) {
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    if(confirmDelete) HoneyAlertDialog(
+        onDismissRequest={if(!deleting){confirmDelete=false;confirmation=""}},
+        title={Text("Eliminar cuenta")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                Text("Se eliminarán tu cuenta, las instalaciones registradas y sus revisiones y eventos del servidor. También se borrará el historial local de esta cuenta en este teléfono. Esta acción no se puede deshacer.")
+                Text("Escribe ELIMINAR para confirmar.",style=MaterialTheme.typography.labelMedium,color=HoneyStyle.Muted)
+                OutlinedTextField(value=confirmation,onValueChange={confirmation=it.trim().uppercase()},singleLine=true,
+                    label={Text("Confirmación")},modifier=Modifier.fillMaxWidth(),enabled=!deleting)
+                if(deleting) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton={TextButton(enabled=confirmation=="ELIMINAR"&&!deleting,onClick={confirmDelete=false;onDeleteAccount()}) { Text("Eliminar definitivamente",color=MaterialTheme.colorScheme.error) }},
+        dismissButton={TextButton(enabled=!deleting,onClick={confirmDelete=false;confirmation=""}) { Text("Cancelar") }},
+    )
+    Page {
+        Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+            Text("Cuenta",style=MaterialTheme.typography.headlineMedium)
+        }
+        Glass(Modifier.then(productTourAnchor(tourTarget==ProductTourTarget.ACCOUNT_PROFILE,onTourBounds)),accent=HoneyStyle.Line,glow=true) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(16.dp)) {
+                Box(Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF1E1E1E)),contentAlignment=Alignment.Center) {
+                    HoneyPhoneNavGlyph(AppDestination.PROFILE,true,Modifier.size(44.dp))
+                }
+                Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                    Text("Tu espacio privado",style=MaterialTheme.typography.titleLarge)
+                    Text(email?.takeIf(String::isNotBlank) ?: "Cuenta conectada",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                }
+            }
+            HorizontalDivider(color=HoneyStyle.Line)
+            Text("Las revisiones y la actividad de HoneyPhone se guardan bajo esta cuenta para mantener tus datos separados de los de otras personas.",style=MaterialTheme.typography.bodyMedium,color=HoneyStyle.Muted)
+        }
+        message?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=if(it.startsWith("No se pudo"))MaterialTheme.colorScheme.error else HoneyStyle.Muted) }
+        AccountSettingsContent(
+            devices=devices,deviceName=deviceName,deviceMessage=deviceMessage,currentInstallationId=currentInstallationId,
+            apiConnection=apiConnection,automaticScansEnabled=automaticScansEnabled,onAutomaticScansChanged=onAutomaticScansChanged,
+            onDeviceName=onDeviceName,onSaveDevice=onSaveDevice,onRevokeDevice=onRevokeDevice,
+            onRefreshDevices=onRefreshDevices,onRefreshApi=onRefreshApi,onDemos=onDemos,onTour=onTour,
+            tourTarget=tourTarget,onTourBounds=onTourBounds,
+        )
+        SecondaryAction("Cerrar sesión",enabled=!deleting,icon=Icons.Default.Logout,onClick=onSignOut)
+        Glass(accent=MaterialTheme.colorScheme.error.copy(alpha=0.4f)) {
+            Eyebrow("Acción permanente",MaterialTheme.colorScheme.error)
+            Text("Eliminar cuenta",style=MaterialTheme.typography.titleLarge)
+            Text("Borra la cuenta y los datos asociados en el servidor y en este teléfono.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            if(deleting) LinearProgressIndicator(Modifier.fillMaxWidth())
+            OutlinedButton(onClick={confirmation="";confirmDelete=true},enabled=!deleting,modifier=Modifier.fillMaxWidth(),
+                border=BorderStroke(1.dp,MaterialTheme.colorScheme.error.copy(alpha=0.65f)),
+                colors=ButtonDefaults.outlinedButtonColors(contentColor=MaterialTheme.colorScheme.error)) {
+                Text(if(deleting)"Eliminando cuenta…" else "Eliminar mi cuenta",style=MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoneyAlertDialog(
+    onDismissRequest:()->Unit,
+    title:@Composable ()->Unit,
+    text:@Composable ()->Unit,
+    confirmButton:@Composable ()->Unit,
+    dismissButton:@Composable ()->Unit,
+) {
+    AlertDialog(
+        onDismissRequest=onDismissRequest,
+        title=title,
+        text=text,
+        confirmButton=confirmButton,
+        dismissButton=dismissButton,
+        shape=RoundedCornerShape(24.dp),
+        containerColor=HoneyStyle.Surface,
+        titleContentColor=HoneyStyle.Ink,
+        textContentColor=HoneyStyle.Muted,
+        iconContentColor=HoneyStyle.Amber,
+        tonalElevation=0.dp,
+    )
+}
+
+@Composable
 private fun SettingsDisclosure(title:String,summary:String,expanded:Boolean,onToggle:()->Unit,content:@Composable ColumnScope.()->Unit) {
     Surface(shape=RoundedCornerShape(12.dp),color=HoneyStyle.Surface,border=BorderStroke(1.dp,HoneyStyle.Line)) {
         Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -737,36 +1065,97 @@ private fun SettingsDisclosure(title:String,summary:String,expanded:Boolean,onTo
     }
 }
 
-private data class ProductTourStep(val icon:ImageVector,val title:String,val purpose:String,val howTo:String,val note:String)
+private enum class ProductTourTarget { WIFI_SCAN, DEMO_SAMPLE, HONEYPOT_ACTION, ACTIVITY_SECTIONS, AUTOMATIC_SCANS, ACCOUNT_PROFILE }
+
+private data class ProductTourStep(
+    val icon:ImageVector,
+    val title:String,
+    val purpose:String,
+    val instruction:String,
+    val destination:AppDestination,
+    val target:ProductTourTarget,
+)
 
 private val PRODUCT_TOUR_STEPS = listOf(
-    ProductTourStep(Icons.Default.Wifi,"Revisa tu red Wi-Fi","HoneyPhone lee los datos que Android comparte sobre la conexión: intensidad de señal, banda, canal y velocidades del enlace.","Pulsa «Escanear red». Puedes añadir una etiqueta como «Casa» o «Trabajo» para reconocer la lectura en Actividad.","La velocidad indicada es la del enlace Wi-Fi, no una prueba de velocidad de Internet ni una auditoría completa de seguridad."),
-    ProductTourStep(Icons.Default.Science,"Aprende con ejemplos","Los ejemplos muestran situaciones inventadas para explicar cómo leer los indicadores.","Abre «Ver ejemplos» desde Red Wi-Fi. Los ejemplos siempre aparecen identificados y no describen tu red.","No se envían ni se guardan hasta que eliges guardarlos."),
-    ProductTourStep(Icons.Default.Security,"Activa el señuelo","El teléfono abre un pequeño servidor web local para registrar solicitudes recibidas mientras está activo.","Pulsa «Activar señuelo» y comparte la dirección mostrada con un equipo de prueba conectado a la misma Wi-Fi. Mantén HoneyPhone en primer plano.","Guarda la hora, la ruta y la dirección de origen en el teléfono. Al sincronizar, envía solo una red aproximada; no conserva el contenido enviado. El router puede impedir conexiones entre equipos."),
-    ProductTourStep(Icons.Default.History,"Consulta la actividad","Aquí vuelves a las revisiones, sesiones y solicitudes que quedaron guardadas en el teléfono o sincronizadas con el servidor.","Usa las pestañas «Señal Wi-Fi» y «Sesiones del señuelo». Pulsa Actualizar para traer datos remotos.","Una solicitud aparece aquí solo si alguien abrió la dirección local mientras el señuelo estaba escuchando."),
-    ProductTourStep(Icons.Default.Settings,"Revisa el dispositivo y los ajustes","Puedes cambiar el nombre de esta instalación, consultar la conexión con el servidor y revisar las lecturas automáticas.","Las lecturas se intentan cada 15 minutos; Android puede aplazarlas por batería o conectividad.","La API ya usa HTTPS. Las comprobaciones DNS y HTTPS de la red son independientes y esperan destinos de prueba definidos por el proyecto."),
+    ProductTourStep(Icons.Default.Wifi,"Red Wi-Fi","Consulta la señal, el tipo de seguridad y la conexión de esta red.","El escaneo manual comienza al tocar «Escanear red» y necesita una conexión Wi-Fi.",AppDestination.HOME,ProductTourTarget.WIFI_SCAN),
+    ProductTourStep(Icons.Default.Science,"Ejemplos","Explora resultados simulados para aprender a leer los indicadores.","Estos casos son ficticios. Solo se guardan si eliges guardarlos.",AppDestination.DEMO_GALLERY,ProductTourTarget.DEMO_SAMPLE),
+    ProductTourStep(Icons.Default.Security,"Señuelo","Activa un sitio local que registra solicitudes recibidas mientras está escuchando.","Elige una apariencia y activa el señuelo desde un dispositivo de prueba conectado a la misma Wi-Fi.",AppDestination.HONEYPOT,ProductTourTarget.HONEYPOT_ACTION),
+    ProductTourStep(Icons.Default.History,"Actividad","Revisa las lecturas Wi-Fi y las solicitudes recibidas por el señuelo.","Cambia de pestaña para ver cada tipo de registro y usa «Actualizar» para consultar el servidor.",AppDestination.HISTORY,ProductTourTarget.ACTIVITY_SECTIONS),
+    ProductTourStep(Icons.Default.BatteryChargingFull,"Escaneos automáticos","HoneyPhone puede guardar lecturas en segundo plano, aproximadamente cada 15 minutos.","Activa o pausa esta función desde Cuenta → Ajustes del dispositivo. Solo escanea con Wi-Fi e Internet verificado; los datos móviles solos no generan lecturas.",AppDestination.PROFILE,ProductTourTarget.AUTOMATIC_SCANS),
+    ProductTourStep(Icons.Default.Person,"Cuenta","Tu historial pertenece a tu cuenta y se mantiene separado del de otras personas.","Desde Cuenta puedes cerrar sesión o solicitar la eliminación de tu cuenta y sus datos.",AppDestination.PROFILE,ProductTourTarget.ACCOUNT_PROFILE),
 )
 
 @Composable
-private fun ProductTourSheet(step:Int,onPrevious:()->Unit,onNext:()->Unit,onFinish:()->Unit,modifier:Modifier=Modifier) {
-    val current=PRODUCT_TOUR_STEPS[step.coerceIn(PRODUCT_TOUR_STEPS.indices)]
-    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=22.dp).padding(bottom=28.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Eyebrow("Recorrido · ${step+1} de ${PRODUCT_TOUR_STEPS.size}",HoneyStyle.Amber)
-            TextButton(onClick=onFinish){Text("Omitir")}
+private fun productTourAnchor(active:Boolean,onBounds:(Rect)->Unit):Modifier {
+    val requester=remember { BringIntoViewRequester() }
+    LaunchedEffect(active) {
+        if(active) {
+            delay(180)
+            requester.bringIntoView()
         }
-        LinearProgressIndicator(progress={(step+1f)/PRODUCT_TOUR_STEPS.size},modifier=Modifier.fillMaxWidth(),color=HoneyStyle.Lime,trackColor=HoneyStyle.Line)
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-            Icon(current.icon,null,tint=HoneyStyle.Lime,modifier=Modifier.size(28.dp))
-            Text(current.title,style=MaterialTheme.typography.headlineSmall)
+    }
+    return if(active) Modifier.bringIntoViewRequester(requester).onGloballyPositioned { onBounds(it.boundsInRoot()) }
+    else Modifier
+}
+
+@Composable
+private fun ProductTourOverlay(step:Int,targetBounds:Rect?,onPrevious:()->Unit,onNext:()->Unit,onFinish:()->Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val targetIsLow=targetBounds?.center?.y?.let { it>constraints.maxHeight*0.54f } ?: false
+        val cardPlacement=if(targetIsLow) Modifier.align(Alignment.TopCenter).padding(top=64.dp)
+            else Modifier.align(Alignment.BottomCenter).padding(bottom=12.dp)
+        Canvas(Modifier.fillMaxSize().clickable(interactionSource=remember { androidx.compose.foundation.interaction.MutableInteractionSource() },indication=null) { }
+            .graphicsLayer { compositingStrategy=CompositingStrategy.Offscreen }) {
+            drawRect(Color.Black.copy(alpha=0.78f))
+            targetBounds?.let { bounds ->
+                val inset=10.dp.toPx()
+                val left=(bounds.left-inset).coerceAtLeast(0f)
+                val top=(bounds.top-inset).coerceAtLeast(0f)
+                val width=(bounds.width+inset*2).coerceAtMost(size.width-left)
+                val height=(bounds.height+inset*2).coerceAtMost(size.height-top)
+                val corner=CornerRadius(20.dp.toPx(),20.dp.toPx())
+                drawRoundRect(Color.Transparent,Offset(left,top),androidx.compose.ui.geometry.Size(width,height),corner,blendMode=BlendMode.Clear)
+                drawRoundRect(Color.White.copy(alpha=0.94f),Offset(left,top),androidx.compose.ui.geometry.Size(width,height),corner,style=Stroke(2.dp.toPx()))
+            }
         }
-        Text(current.purpose,style=MaterialTheme.typography.bodyLarge,color=HoneyStyle.Ink)
-        InfoStrip("Cómo usarlo",current.howTo,HoneyStyle.Aqua)
-        InfoStrip("Qué debes saber",current.note,HoneyStyle.Muted)
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick=onPrevious,enabled=step>0,modifier=Modifier.weight(1f).heightIn(min=50.dp)) { Text("Anterior") }
-            Button(onClick=if(step==PRODUCT_TOUR_STEPS.lastIndex)onFinish else onNext,modifier=Modifier.weight(1f).heightIn(min=50.dp)) {
-                Text(if(step==PRODUCT_TOUR_STEPS.lastIndex)"Terminar" else "Siguiente")
+        Surface(
+            modifier=cardPlacement.fillMaxWidth().padding(horizontal=16.dp),
+            shape=RoundedCornerShape(24.dp),
+            color=HoneyStyle.Surface,
+            contentColor=HoneyStyle.Ink,
+            border=BorderStroke(1.dp,HoneyStyle.Line),
+            shadowElevation=24.dp,
+        ) {
+            Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                    Eyebrow("RECORRIDO  ·  ${step+1}/${PRODUCT_TOUR_STEPS.size}",HoneyStyle.Muted)
+                    TextButton(onClick=onFinish){Text("Salir")}
+                }
+                LinearProgressIndicator(progress={(step+1f)/PRODUCT_TOUR_STEPS.size},modifier=Modifier.fillMaxWidth(),color=HoneyStyle.Ink,trackColor=HoneyStyle.Line)
+                AnimatedContent(
+                    targetState=step,
+                    transitionSpec={
+                        (fadeIn(tween(220))+slideInHorizontally(tween(220)){it/7}) togetherWith
+                            (fadeOut(tween(160))+slideOutHorizontally(tween(160)){-it/7})
+                    },
+                    label="product-tour-step",
+                ) { index ->
+                    val current=PRODUCT_TOUR_STEPS[index.coerceIn(PRODUCT_TOUR_STEPS.indices)]
+                    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            Icon(current.icon,null,tint=HoneyStyle.Ink,modifier=Modifier.size(26.dp))
+                            Text(current.title,style=MaterialTheme.typography.headlineSmall)
+                        }
+                        Text(current.purpose,style=MaterialTheme.typography.bodyLarge,color=HoneyStyle.Ink)
+                        Text(current.instruction,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick=onPrevious,enabled=step>0,modifier=Modifier.weight(1f).heightIn(min=50.dp)){Text("Anterior")}
+                    Button(onClick=if(step==PRODUCT_TOUR_STEPS.lastIndex)onFinish else onNext,modifier=Modifier.weight(1f).heightIn(min=50.dp)) {
+                        Text(if(step==PRODUCT_TOUR_STEPS.lastIndex)"Terminar" else "Siguiente")
+                    }
+                }
             }
         }
     }
@@ -774,7 +1163,7 @@ private fun ProductTourSheet(step:Int,onPrevious:()->Unit,onNext:()->Unit,onFini
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,wifiConnected:Boolean,selectedProfile:HoneypotProfile,onSelectProfile:(HoneypotProfile)->Unit,onStart:()->Unit,onStop:()->Unit,onClear:()->Unit) {
+private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,wifiConnected:Boolean,selectedProfile:HoneypotProfile,onSelectProfile:(HoneypotProfile)->Unit,onStart:()->Unit,onStop:()->Unit,onClear:()->Unit,onToast:(String)->Unit,tourTarget:ProductTourTarget?,onTourBounds:(Rect)->Unit) {
     var selectedEvent by remember { mutableStateOf<HoneypotEvent?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     val context=LocalContext.current
@@ -797,33 +1186,60 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
             lastAnimatedEvent=currentEventId
         }
     }
-    if(confirmClear) AlertDialog(onDismissRequest={confirmClear=false},title={Text("¿Borrar solicitudes guardadas?")},
+    if(confirmClear) HoneyAlertDialog(onDismissRequest={confirmClear=false},title={Text("¿Borrar solicitudes guardadas?")},
         text={Text("Esto elimina del teléfono las solicitudes recibidas y guardadas localmente.")},
         confirmButton={TextButton(onClick={onClear();confirmClear=false}){Text("Borrar")}},
         dismissButton={TextButton(onClick={confirmClear=false}){Text("Cancelar")}})
     Page {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                Eyebrow("Servidor señuelo local · puerto 8080",HoneyStyle.Muted)
+            Column(Modifier.weight(1f)) {
                 Text("Señuelo",style=MaterialTheme.typography.headlineMedium)
             }
             StatusPill(when(status.phase){HoneypotPhase.STARTING->"Activando";HoneypotPhase.LISTENING->"Escuchando";HoneypotPhase.ERROR->"No se inició";HoneypotPhase.STOPPED->"Detenido"},
                 when(status.phase){HoneypotPhase.LISTENING->HoneyStyle.Lime;HoneypotPhase.ERROR->HoneyStyle.Amber;else->HoneyStyle.Muted})
         }
         if(!wifiConnected && status.phase!=HoneypotPhase.LISTENING) InfoStrip("Conecta a una red Wi‑Fi","El señuelo solo puede aceptar solicitudes desde una red Wi‑Fi activa.",HoneyStyle.Amber)
-        Box(Modifier.fillMaxWidth().height(210.dp),contentAlignment=Alignment.Center) {
-            HoneypotFlytrap(status.phase==HoneypotPhase.LISTENING,currentEventId,size=210.dp)
+        Box(Modifier.fillMaxWidth().height(292.dp),contentAlignment=Alignment.Center) {
+            HoneypotFlytrap(status.phase==HoneypotPhase.LISTENING,currentEventId,size=284.dp)
         }
+        PrimaryAction(if(status.phase==HoneypotPhase.LISTENING)"Detener señuelo" else if(status.phase==HoneypotPhase.STARTING)"Activando…" else "Activar señuelo",
+            enabled=status.phase!=HoneypotPhase.STARTING && (wifiConnected || status.phase==HoneypotPhase.LISTENING),onClick=if(status.phase==HoneypotPhase.LISTENING)onStop else startWithVisibleNotification,
+            modifier=productTourAnchor(tourTarget==ProductTourTarget.HONEYPOT_ACTION,onTourBounds))
         Glass {
-            Eyebrow("Escenario visual",HoneyStyle.Muted)
-            Text(honeypotProfileTitle(selectedProfile),style=MaterialTheme.typography.titleMedium)
-            Text(honeypotProfileDescription(selectedProfile),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
-            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            Eyebrow("Apariencia del señuelo",HoneyStyle.Muted)
+            Text("Elige qué página verá quien lo visite.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 HoneypotProfile.entries.forEach { profile ->
-                    FilterChip(selected=selectedProfile==profile,onClick={onSelectProfile(profile)},enabled=status.phase !in setOf(HoneypotPhase.STARTING,HoneypotPhase.LISTENING),label={Text(honeypotProfileShortName(profile),maxLines=1)})
+                    val selected=selectedProfile==profile
+                    val enabled=status.phase !in setOf(HoneypotPhase.STARTING,HoneypotPhase.LISTENING)
+                    Surface(
+                        modifier=Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .clickable(enabled=enabled,role=Role.RadioButton){onSelectProfile(profile)},
+                        shape=RoundedCornerShape(14.dp),
+                        color=if(selected)Color.White.copy(alpha=0.07f) else HoneyStyle.Background,
+                        border=BorderStroke(1.dp,if(selected)Color.White.copy(alpha=0.5f) else HoneyStyle.Line),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp),
+                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha=if(selected)0.08f else 0.035f)),
+                                contentAlignment=Alignment.Center) {
+                                HoneypotScenarioGlyph(profile,selected)
+                            }
+                            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                Text(honeypotProfileTitle(profile),style=MaterialTheme.typography.titleSmall,color=HoneyStyle.Ink)
+                                Text(honeypotProfileDescription(profile),style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+                            }
+                            Box(Modifier.size(16.dp).clip(RoundedCornerShape(50))
+                                .border(1.5.dp,if(selected)HoneyStyle.Ink else HoneyStyle.Muted.copy(alpha=0.55f),RoundedCornerShape(50)),
+                                contentAlignment=Alignment.Center) {
+                                if(selected) Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(HoneyStyle.Ink))
+                            }
+                        }
+                    }
                 }
             }
-            Text("Los formularios son ficticios. HoneyPhone registra la ruta y el intento, pero no lee ni guarda los campos escritos. Usa solo esta red de prueba o una red con autorización.",style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Muted)
+            Text("Solo en redes autorizadas · no guarda lo que escriban.",style=MaterialTheme.typography.labelSmall,color=HoneyStyle.Muted)
         }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end=12.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
@@ -837,7 +1253,7 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
             Surface(Modifier.fillMaxWidth().clickable {
                 val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("HoneyPhone URL",url))
-                Toast.makeText(context,"Enlace copiado",Toast.LENGTH_SHORT).show()
+                onToast("Dirección del señuelo copiada")
             },shape=RoundedCornerShape(8.dp),color=HoneyStyle.Surface,border=BorderStroke(1.dp,HoneyStyle.Line)) {
                 Row(Modifier.padding(14.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -850,8 +1266,6 @@ private fun HoneypotHomeScreen(status:HoneypotStatus,events:List<HoneypotEvent>,
             status.message?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=HoneyStyle.Amber) }
         }
         if(status.phase==HoneypotPhase.ERROR) status.message?.let { InfoStrip("No se pudo iniciar",it,HoneyStyle.Amber) }
-        PrimaryAction(if(status.phase==HoneypotPhase.LISTENING)"Detener señuelo" else if(status.phase==HoneypotPhase.STARTING)"Activando…" else "Activar señuelo",
-            enabled=status.phase!=HoneypotPhase.STARTING && (wifiConnected || status.phase==HoneypotPhase.LISTENING),onClick=if(status.phase==HoneypotPhase.LISTENING)onStop else startWithVisibleNotification)
         notificationNotice?.let { InfoStrip("Notificación necesaria",it,HoneyStyle.Amber) }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Eyebrow("Solicitudes recibidas",HoneyStyle.Muted)
@@ -936,15 +1350,10 @@ private fun honeypotProfileTitle(profile:HoneypotProfile)=when(profile) {
     HoneypotProfile.ADMIN_CONSOLE->"Consola de administración"
     HoneypotProfile.COMPROMISED_SITE->"Sitio intervenido"
 }
-private fun honeypotProfileShortName(profile:HoneypotProfile)=when(profile) {
-    HoneypotProfile.LOGIN_PORTAL->"Acceso"
-    HoneypotProfile.ADMIN_CONSOLE->"Consola"
-    HoneypotProfile.COMPROMISED_SITE->"Intervenido"
-}
 private fun honeypotProfileDescription(profile:HoneypotProfile)=when(profile) {
-    HoneypotProfile.LOGIN_PORTAL->"Muestra un formulario de acceso ficticio. Al enviarlo se registra el intento en /login; los campos no se leen ni se guardan."
-    HoneypotProfile.ADMIN_CONSOLE->"Presenta un panel con datos inventados y enlaces señuelo para registrar qué secciones intenta abrir el visitante."
-    HoneypotProfile.COMPROMISED_SITE->"Muestra una página ficticia que parece intervenida. Registra la visita y el acceso a la ruta del panel."
+    HoneypotProfile.LOGIN_PORTAL->"Formulario de acceso simulado."
+    HoneypotProfile.ADMIN_CONSOLE->"Panel con rutas de administración."
+    HoneypotProfile.COMPROMISED_SITE->"Página con apariencia intervenida."
 }
 private fun userAgentLabel(value:String)=when(value.uppercase()) {
     "BROWSER"->"Navegador"
@@ -1000,14 +1409,16 @@ private fun signalStatus(signal: SignalPresentation)=when {
     else->"Sin diferencia observada"
 }
 private fun syncLabel(status: String)=when(status.substringBefore(":").lowercase()) {
-    "synced"->"Guardada en el servidor"
-    "syncing"->"Enviando al servidor"
-    "failed"->"Pendiente · reintentar envío"
-    else->"Guardada solo en este teléfono"
+    "synced"->"Enviado"
+    "syncing"->"Enviando…"
+    "failed"->"Error al enviar"
+    "pending"->"Sin enviar"
+    else->"Enviado"
 }
 private fun syncColor(status: String)=when(status.substringBefore(":").lowercase()) {
     "synced"->HoneyStyle.Aqua
     "failed"->HoneyStyle.Amber
+    "syncing"->HoneyStyle.Aqua
     else->HoneyStyle.Muted
 }
 private fun verdictTitle(v: ReviewVerdict)=when(v) {
