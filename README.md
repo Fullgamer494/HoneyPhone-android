@@ -6,7 +6,7 @@
 
 <p align="center"><strong>Indicadores de tu Wi-Fi, explicados con contexto.</strong><br />App nativa Android · Kotlin · Jetpack Compose · Material 3</p>
 
-![Captura real de una revisión en Android](preview.png)
+![Captura real del señuelo HTTP activo en HoneyPhone Android](preview.png)
 
 HoneyPhone ayuda a observar señales disponibles en el teléfono y a guardar revisiones de la red Wi-Fi que estás usando. Presenta cada resultado con sus límites: una diferencia no confirma por sí sola un ataque y una prueba sin destino configurado se muestra como pendiente.
 
